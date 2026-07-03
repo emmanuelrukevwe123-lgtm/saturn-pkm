@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Saturn — knowledge, in orbit</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Baloo+2:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Quicksand:wght@400;500;600;700&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+  <div class="app">
+
+    <!-- ========== SIDEBAR ========== -->
+    <aside class="sidebar">
+      <div class="brand">
+        <svg width="40" height="40" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+          <ellipse cx="32" cy="32" rx="30" ry="9" transform="rotate(-22 32 32)" fill="none" class="logo-ring"
+            stroke-width="2.4" opacity="0.9"></ellipse>
+          <circle cx="32" cy="32" r="14" class="logo-planet"></circle>
+          <circle cx="27" cy="28" r="14" class="logo-glow" opacity="0.14"></circle>
+        </svg>
+        <div>
+          <div class="brand-name">Saturn</div>
+          <div class="brand-tag">knowledge, in orbit</div>
+        </div>
+      </div>
+
+      <div class="menu-label">Menu</div>
+      <nav class="side-nav">
+        <button class="nav-link active" data-screen="home">Notes</button>
+        <button class="nav-link" data-screen="tags">Tags</button>
+        <button class="nav-link" data-screen="progress">Progress</button>
+        <button class="nav-link" data-screen="bin">Bin</button>
+      </nav>
+
+      <div class="divider"></div>
+
+      <button id="add-nav" class="add-nav">＋ New note</button>
+
+      <div class="auth-card" id="auth-card">
+        <div class="auth-profile">
+          <div class="auth-avatar" id="auth-avatar">G</div>
+          <div class="auth-copy">
+            <div class="auth-name" id="auth-name">Not signed in</div>
+            <div class="auth-meta" id="auth-meta">Notes stay on this browser.</div>
+          </div>
+        </div>
+        <button id="google-signin" class="auth-btn" type="button">Sign in with Google</button>
+        <button id="google-signout" class="auth-btn auth-btn-secondary" type="button" hidden>Sign out</button>
+      </div>
+
+      <div class="spacer"></div>
+
+      <button id="theme-toggle" class="theme-toggle">
+        <span id="theme-label">Light mode</span>
+        <span id="theme-glyph">☀</span>
+      </button>
+    </aside>
+
+    <!-- ========== MAIN ========== -->
+    <main class="main j-scroll">
+      <div class="content">
+
+        <!-- NOTES (home) -->
+        <section id="screen-home">
+          <div class="eyebrow" id="today-eyebrow"></div>
+          <h1 class="page-title">Notes</h1>
+
+          <div class="hero">
+            <div class="hero-ring">
+              <svg width="212" height="212" viewBox="0 0 212 212">
+                <circle class="ring-track" cx="106" cy="106" r="96" fill="none" stroke-width="8"></circle>
+                <circle id="home-ring" class="ring-progress" cx="106" cy="106" r="96" fill="none" stroke-width="8"
+                  stroke-linecap="round" stroke-dasharray="603.19" stroke-dashoffset="603.19"
+                  transform="rotate(-90 106 106)"></circle>
+                <ellipse class="ring-ellipse" cx="106" cy="106" rx="88" ry="26" transform="rotate(-20 106 106)"
+                  fill="none" stroke-width="3" opacity="0.85"></ellipse>
+                <circle class="ring-inner" cx="106" cy="106" r="71" stroke-width="1"></circle>
+              </svg>
+              <div class="hero-center">
+                <div class="hero-num" id="hero-num">0</div>
+                <div class="hero-sub" id="hero-sub">of 0 notes linked</div>
+              </div>
+            </div>
+            <div class="hero-copy">
+              <div class="hero-headline" id="hero-headline">No notes yet</div>
+              <div class="hero-motto">Keep your orbit steady.</div>
+            </div>
+          </div>
+
+          <input id="search-input" class="field search-field" type="search" placeholder="Search notes…"
+            autocomplete="off">
+
+          <div class="pills" id="tag-pills"></div>
+
+          <div class="list-heading" id="list-heading">All notes</div>
+          <div class="ledger" id="ledger"></div>
+          <div class="empty" id="home-empty" hidden>A clear page today.</div>
+        </section>
+
+        <!-- NOTE (detail) -->
+        <section id="screen-note" hidden>
+          <button class="back-link" id="back-link">← All notes</button>
+          <div class="eyebrow" id="note-eyebrow">Note</div>
+          <input id="note-title" class="title-input" placeholder="Untitled note" autocomplete="off">
+
+          <div class="note-tools">
+            <button id="mode-toggle" class="pill active">Edit</button>
+            <button id="save-note" class="pill pill-save" disabled>Save changes</button>
+            <span id="save-status" class="save-status">Saved</span>
+            <span class="spacer"></span>
+            <button id="delete-btn" class="pill pill-danger">Delete</button>
+          </div>
+
+          <label class="form-label" for="note-tags">Tags</label>
+          <input id="note-tags" class="field" placeholder="tags, comma, separated" autocomplete="off">
+
+          <div id="rendered-body" class="note-card rendered"></div>
+          <textarea id="note-body" class="note-card editor"
+            placeholder="Write in Markdown… link other notes with [[Note title]]" hidden></textarea>
+
+          <div class="list-heading">Linked from</div>
+          <div class="ledger" id="backlinks"></div>
+          <div class="empty small" id="no-backlinks">Nothing links here yet.</div>
+        </section>
+
+        <!-- TAGS -->
+        <section id="screen-tags" hidden>
+          <div class="eyebrow">Grouped notes</div>
+          <h1 class="page-title tight">Tags</h1>
+          <p class="page-sub">Each tag gathers the notes you've filed under it. Open one to see what's inside and how
+            connected it is.</p>
+          <div id="tag-groups"></div>
+          <div class="empty" id="tags-empty" hidden>No tags yet — add some to a note.</div>
+        </section>
+
+        <!-- PROGRESS -->
+        <section id="screen-progress" hidden>
+          <div class="eyebrow">Your record</div>
+          <h1 class="page-title tight-lg">Progress</h1>
+
+          <div class="stats-grid">
+            <div class="stat-ring-card">
+              <div class="stat-ring">
+                <svg width="148" height="148" viewBox="0 0 148 148">
+                  <circle class="ring-track" cx="74" cy="74" r="64" fill="none" stroke-width="8"></circle>
+                  <circle id="progress-ring" class="ring-progress" cx="74" cy="74" r="64" fill="none" stroke-width="8"
+                    stroke-linecap="round" stroke-dasharray="402.12" stroke-dashoffset="402.12"
+                    transform="rotate(-90 74 74)"></circle>
+                  <ellipse class="ring-ellipse" cx="74" cy="74" rx="58" ry="17" transform="rotate(-20 74 74)"
+                    fill="none" stroke-width="2.4" opacity="0.85"></ellipse>
+                  <circle class="ring-inner" cx="74" cy="74" r="47" stroke-width="1"></circle>
+                </svg>
+                <div class="stat-ring-pct" id="stat-pct">0%</div>
+              </div>
+              <div>
+                <div class="stat-big" id="stat-linked">0 of 0</div>
+                <div class="stat-note">notes linked — the ring fills as ideas connect.</div>
+              </div>
+            </div>
+            <div class="stat-stack">
+              <div class="stat-card">
+                <div class="stat-num" id="stat-links">0</div>
+                <div class="stat-label">links between notes</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-num" id="stat-orphans">0</div>
+                <div class="stat-label">orphan notes</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel-card">
+            <div class="list-heading pad">By tag</div>
+            <div id="breakdown"></div>
+          </div>
+
+          <div class="panel-card">
+            <div class="list-heading pad">Recently edited</div>
+            <div class="group-rows" id="recent-list"></div>
+          </div>
+        </section>
+
+        <!-- BIN -->
+        <section id="screen-bin" hidden>
+          <div class="eyebrow">Deleted notes</div>
+          <h1 class="page-title tight">Dead Stars</h1>
+          <p class="page-sub">Deleted notes wait here as dim stars. Restore one to bring it back into orbit, or remove it for good.</p>
+          <div class="dead-bin" id="deleted-list"></div>
+          <div class="empty" id="bin-empty" hidden>No dead stars in the bin.</div>
+        </section>
+
+        <!-- ADD -->
+        <section id="screen-add" hidden>
+          <div class="add-wrap">
+            <div class="eyebrow">New entry</div>
+            <h1 class="page-title tight-xl">Add a note</h1>
+
+            <label class="form-label first" for="add-title">What's the note called?</label>
+            <input id="add-title" class="field" placeholder="e.g. How linking works" autocomplete="off">
+
+            <label class="form-label" for="add-tags">Tags</label>
+            <input id="add-tags" class="field" placeholder="tags, comma, separated" autocomplete="off">
+
+            <label class="form-label" for="add-body">First lines</label>
+            <textarea id="add-body" class="field add-body"
+              placeholder="Write in Markdown… link other notes with [[Note title]]"></textarea>
+
+            <button id="add-save" class="save-btn" disabled>Add to Saturn</button>
+          </div>
+        </section>
+
+      </div>
+    </main>
+
+  </div>
+
+  <script src="firebase-config.js"></script>
+  <script src="script.js"></script>
+</body>
+
+</html>
