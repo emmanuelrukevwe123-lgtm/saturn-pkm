@@ -96,6 +96,17 @@ of a Zettelkasten is to keep orphans near zero.
 - **Tags screen** — expand a tag group to see everything filed under it.
 - **Recently edited** (Progress screen) — your last five touched notes.
 
+## AI: Summarize & Ask Saturn
+
+Both features need Google sign-in (and the server AI setup in `AI.md`):
+
+- **✦ Summarize** — on the note toolbar. Streams an AI summary into a panel
+  below the note; **Insert into note** appends it as an `## AI summary`
+  section (click **Save changes** to keep it).
+- **Ask Saturn** — on the Notes screen. Type a question and press **Ask**;
+  the answer is drawn only from your notes and references `[[Note titles]]`
+  it used. Signed-out visitors see the buttons disabled.
+
 ## Progress screen
 
 - **Big ring** — percentage of notes that are linked into the web.
@@ -106,7 +117,9 @@ of a Zettelkasten is to keep orphans near zero.
 ## Your data
 
 - Notes are stored in your browser's **localStorage** under `saturn-pkm-notes`
-  (theme choice under `saturn-pkm-theme`). Nothing leaves your machine.
+  (theme choice under `saturn-pkm-theme`). Nothing leaves your machine —
+  except when you explicitly use an AI feature, which sends the relevant
+  notes to the Gemini API for that one request (see `AI.md`).
 - Deleted notes are stored separately under `saturn-pkm-deleted-notes`.
 - If Google sign-in is configured and you sign in, Saturn stores notes in a
   Google-user-specific localStorage key. This separates local notebooks by

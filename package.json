@@ -1,0 +1,9 @@
+{
+  "name": "saturn-pkm",
+  "private": true,
+  "type": "module",
+  "description": "Serverless AI endpoint deps for Saturn PKM. The app itself (public/) is static and build-free.",
+  "dependencies": {
+    "jose": "^5.9.6"
+  }
+}

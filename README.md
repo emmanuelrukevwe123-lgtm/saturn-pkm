@@ -18,8 +18,11 @@ ledger-style lists.
 │   ├── firebase-config.js    Optional Firebase config for Google sign-in
 │   ├── style.css
 │   └── script.js
+├── api/
+│   └── ai.js                 Vercel serverless function — Gemini AI proxy
 ├── docs/
 │   ├── USAGE.md              How to use the app
+│   ├── AI.md                 AI features (Summarize / Ask Saturn) + setup
 │   ├── GOOGLE_AUTH.md        Optional Google sign-in setup
 │   ├── DEPLOY.md             Deploying to Vercel (free plan)
 │   ├── pkm-plan.md           The original build plan
@@ -27,6 +30,7 @@ ledger-style lists.
 ├── design/
 │   └── Saturn.html           Design reference export — never edited
 ├── CONTEXT.md                Living log of what was built and why
+├── package.json              Deps for the serverless function only (jose)
 └── vercel.json               Tells Vercel to serve public/ with no build step
 ```
 
@@ -47,6 +51,7 @@ as a plain static site.
 ## Docs
 
 - **[How to use Saturn](docs/USAGE.md)** — notes, Markdown, wiki links, backlinks, tags, themes
+- **[AI features](docs/AI.md)** — ✦ Summarize + Ask Saturn (free Gemini API, requires sign-in)
 - **[Google sign-in setup](docs/GOOGLE_AUTH.md)** — optional Firebase Authentication setup
 - **[Deploying to Vercel](docs/DEPLOY.md)**
 

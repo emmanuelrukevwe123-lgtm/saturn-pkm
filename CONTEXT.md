@@ -85,6 +85,16 @@ other via `[[Note title]]`, and show backlinks. Data lives in `localStorage`.
 - **2026-07-03** — Initialized the git repo (`main`), set git identity, and pushed to
   GitHub: https://github.com/emmanuelrukevwe123-lgtm/saturn-pkm (private). Ready for
   Vercel import per `docs/DEPLOY.md` Option A; Vercel account connection still pending.
+- **2026-07-03** — **AI features added** (user request; Gemini free tier chosen over paid
+  Claude API): `api/ai.js` Vercel serverless function proxies to `gemini-3.5-flash`
+  (`streamGenerateContent`, SSE re-streamed as plain text). Endpoint requires Google
+  sign-in — Firebase ID token verified as a JWT via `jose` (env: `GEMINI_API_KEY`,
+  `FIREBASE_PROJECT_ID`). Client: ✦ Summarize button on the note toolbar (streaming
+  panel + "Insert into note" that appends an `## AI summary` section to the draft) and
+  an "Ask Saturn" card on the Notes screen (Q&A over all notes, answers cite
+  [[Note titles]]). AI controls disabled until signed in. New `docs/AI.md`;
+  `package.json` added (`jose` only — app itself still build-free). Still pending:
+  user's Firebase config values, Gemini key, Vercel import + env vars.
 
 ## Features shipped
 - Two-pane Saturn-styled UI (cream/terracotta, Baloo 2 + Quicksand, sidebar 252px)

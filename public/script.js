@@ -420,6 +420,7 @@ function renderNote() {
   const note = getNote(selectedId);
   if (!note) { noteDraft = null; showScreen("home"); return; }
   const draft = ensureDraft(note);
+  syncAiSummaryPanel(note.id);
 
   noteEyebrow.textContent = "Note · " + editedLabel(note).replace("edited ", "");
   if (document.activeElement !== titleInput) titleInput.value = draft.title;
@@ -693,6 +694,8 @@ function renderAuth() {
   if (authStatus === "unconfigured") googleSignIn.textContent = "Configure Google sign-in";
   else if (authStatus === "loading" || authStatus === "checking") googleSignIn.textContent = "Checking Google sign-in";
   else googleSignIn.textContent = "Sign in with Google";
+
+  renderAiAvailability();
 }
 
 function copyLocalNotesToUserStore(userKey) {
@@ -1047,6 +1050,142 @@ function seedIfEmpty() {
   ];
   save();
 }
+
+// ---------- AI (Summarize + Ask Saturn) ----------
+// The browser never holds the Gemini key: requests go to /api/ai (a Vercel
+// serverless function) with the signed-in user's Firebase ID token, and the
+// answer streams back as plain text, rendered as Markdown once complete.
+const aiSummarizeBtn = $("#ai-summarize");
+const aiSummaryPanel = $("#ai-summary");
+const aiSummaryBody  = $("#ai-summary-body");
+const aiInsertBtn    = $("#ai-insert");
+const askForm  = $("#ask-form");
+const askInput = $("#ask-input");
+const askBtn   = $("#ask-btn");
+const askHint  = $("#ask-hint");
+const askPanel = $("#ask-answer");
+const askBody  = $("#ask-answer-body");
+
+let aiBusy = false;
+let lastSummary = "";
+let aiSummaryNoteId = null;
+
+function aiReady() {
+  return !!currentUser;
+}
+
+function renderAiAvailability() {
+  const ready = aiReady();
+  const hint = authStatus === "unconfigured"
+    ? "Google sign-in isn't set up yet — AI needs it."
+    : "Sign in with Google to use AI.";
+  aiSummarizeBtn.disabled = !ready || aiBusy;
+  aiSummarizeBtn.title = ready ? "Summarize this note with AI" : hint;
+  askBtn.disabled = !ready || aiBusy;
+  askInput.disabled = !ready;
+  askHint.hidden = ready;
+  askHint.textContent = hint;
+}
+
+// Called from renderNote: drop a stale summary when a different note opens.
+function syncAiSummaryPanel(noteId) {
+  if (aiSummaryNoteId === noteId) return;
+  aiSummaryPanel.hidden = true;
+  aiInsertBtn.hidden = true;
+  lastSummary = "";
+}
+
+function noteForAi(note) {
+  return { title: note.title, tags: note.tags, body: note.body };
+}
+
+async function streamAI(payload, bodyEl) {
+  const token = await currentUser.getIdToken();
+  const response = await fetch("/api/ai", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer " + token
+    },
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) {
+    let message = "The AI request failed. Try again in a moment.";
+    try { message = (await response.json()).error || message; } catch { /* keep default */ }
+    throw new Error(message);
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    text += decoder.decode(value, { stream: true });
+    bodyEl.classList.remove("pending");
+    bodyEl.textContent = text;
+  }
+  return text;
+}
+
+async function runAI(payload, panel, bodyEl, onDone) {
+  if (!aiReady() || aiBusy) return;
+  aiBusy = true;
+  renderAiAvailability();
+  panel.hidden = false;
+  bodyEl.classList.add("pending");
+  bodyEl.classList.remove("error");
+  bodyEl.textContent = "Thinking…";
+  try {
+    const text = await streamAI(payload, bodyEl);
+    bodyEl.classList.remove("pending");
+    bodyEl.innerHTML = renderMarkdown(text);
+    if (onDone) onDone(text);
+  } catch (error) {
+    bodyEl.classList.remove("pending");
+    bodyEl.classList.add("error");
+    bodyEl.textContent = error.message;
+  } finally {
+    aiBusy = false;
+    renderAiAvailability();
+  }
+}
+
+aiSummarizeBtn.addEventListener("click", () => {
+  const note = getNote(selectedId);
+  if (!note) return;
+  const draft = ensureDraft(note);
+  aiSummaryNoteId = note.id;
+  aiInsertBtn.hidden = true;
+  runAI(
+    { mode: "summarize", note: { title: draft.title, tags: draftTags(), body: draft.body } },
+    aiSummaryPanel, aiSummaryBody,
+    (text) => {
+      lastSummary = text.trim();
+      aiInsertBtn.hidden = lastSummary.length === 0;
+    }
+  );
+});
+
+aiInsertBtn.addEventListener("click", () => {
+  const note = getNote(selectedId);
+  if (!note || !lastSummary) return;
+  const draft = ensureDraft(note);
+  draft.body = draft.body.replace(/\s+$/, "") + "\n\n## AI summary\n" + lastSummary + "\n";
+  bodyEditor.value = draft.body;
+  if (mode === "view") renderedBody.innerHTML = renderMarkdown(draft.body);
+  updateSaveState();
+  aiSummaryPanel.hidden = true;
+});
+
+$("#ai-summary-close").addEventListener("click", () => { aiSummaryPanel.hidden = true; });
+$("#ask-close").addEventListener("click", () => { askPanel.hidden = true; });
+
+askForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const question = askInput.value.trim();
+  if (!question) return;
+  runAI({ mode: "ask", question, notes: notes.map(noteForAi) }, askPanel, askBody);
+});
 
 // ---------- Boot ----------
 load();

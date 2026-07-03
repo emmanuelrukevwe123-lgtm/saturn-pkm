@@ -100,6 +100,24 @@
 
           <div class="pills" id="tag-pills"></div>
 
+          <div class="ask-card">
+            <div class="list-heading">Ask Saturn ✦</div>
+            <form id="ask-form" class="ask-form">
+              <input id="ask-input" class="field" type="text"
+                placeholder="Ask a question about your notes…" autocomplete="off">
+              <button id="ask-btn" class="pill pill-ai" type="submit">Ask</button>
+            </form>
+            <div id="ask-hint" class="empty small" hidden>Sign in with Google to use AI.</div>
+            <div id="ask-answer" class="ai-panel" hidden>
+              <div class="ai-panel-head">
+                <span class="eyebrow">Answer</span>
+                <span class="spacer"></span>
+                <button id="ask-close" class="pill" type="button">Close</button>
+              </div>
+              <div id="ask-answer-body" class="ai-panel-body rendered"></div>
+            </div>
+          </div>
+
           <div class="list-heading" id="list-heading">All notes</div>
           <div class="ledger" id="ledger"></div>
           <div class="empty" id="home-empty" hidden>A clear page today.</div>
@@ -116,6 +134,7 @@
             <button id="save-note" class="pill pill-save" disabled>Save changes</button>
             <span id="save-status" class="save-status">Saved</span>
             <span class="spacer"></span>
+            <button id="ai-summarize" class="pill pill-ai" type="button" title="Summarize this note with AI">✦ Summarize</button>
             <button id="delete-btn" class="pill pill-danger">Delete</button>
           </div>
 
@@ -125,6 +144,16 @@
           <div id="rendered-body" class="note-card rendered"></div>
           <textarea id="note-body" class="note-card editor"
             placeholder="Write in Markdown… link other notes with [[Note title]]" hidden></textarea>
+
+          <div id="ai-summary" class="ai-panel" hidden>
+            <div class="ai-panel-head">
+              <span class="eyebrow">AI summary</span>
+              <span class="spacer"></span>
+              <button id="ai-insert" class="pill" type="button" hidden>Insert into note</button>
+              <button id="ai-summary-close" class="pill" type="button">Close</button>
+            </div>
+            <div id="ai-summary-body" class="ai-panel-body rendered"></div>
+          </div>
 
           <div class="list-heading">Linked from</div>
           <div class="ledger" id="backlinks"></div>

@@ -383,3 +383,24 @@ body.dark {
   border: none; cursor: pointer; background: var(--accent); color: var(--panel);
 }
 .save-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ============ AI (Summarize + Ask Saturn) ============ */
+.pill-ai { border-color: var(--accent); background: var(--accent-tint); color: var(--ink); }
+.pill-ai:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.ask-card {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 18px;
+  padding: 20px 22px; margin: 6px 0 30px;
+}
+.ask-form { display: flex; gap: 10px; align-items: center; }
+.ask-form .field { flex: 1; }
+.ask-form .pill { padding: 12px 22px; font-size: 14px; }
+
+.ai-panel {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 18px;
+  padding: 20px 24px; margin: 18px 0; animation: riseIn .3s ease both;
+}
+.ai-panel-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.ai-panel-body { min-height: 22px; }
+.ai-panel-body.pending { color: var(--muted); font-style: italic; }
+.ai-panel-body.error { color: var(--muted); }
