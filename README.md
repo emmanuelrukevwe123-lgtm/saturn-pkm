@@ -13,9 +13,10 @@ ledger-style lists.
 ## Project structure
 
 ```
-├── public/       The app — this is what gets deployed
-│   ├── index.html
-│   ├── firebase-config.js    Optional Firebase config for Google sign-in
+├── public/       The site — this is what gets deployed
+│   ├── index.html            Landing page (what the app is + how to use it)
+│   ├── app.html              The app itself (served at /app)
+│   ├── firebase-config.js    Firebase config for Google sign-in
 │   ├── style.css
 │   └── script.js
 ├── api/
@@ -36,8 +37,9 @@ ledger-style lists.
 
 ## Run locally
 
-No install needed. Either open `public/index.html` directly in a browser, or serve it.
-Use the local server option when testing Google sign-in:
+No install needed. Either open `public/app.html` directly in a browser (or
+`public/index.html` for the landing page), or serve it. Use the local server
+option when testing Google sign-in:
 
 ```bash
 cd public && python3 -m http.server   # → http://localhost:8000

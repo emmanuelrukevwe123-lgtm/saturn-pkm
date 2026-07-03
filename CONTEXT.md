@@ -96,6 +96,18 @@ other via `[[Note title]]`, and show backlinks. Data lives in `localStorage`.
   `package.json` added (`jose` only — app itself still build-free). Still pending:
   user's Firebase config values, Gemini key, Vercel import + env vars.
 
+- **2026-07-03** — Mobile + landing pass (user feedback from phone testing): responsive
+  layout via one `@media (max-width: 880px)` block (sidebar becomes a wrapping top bar,
+  compact auth chip, type scales down, stat grid stacks); fixed auth-card email overflow
+  (`overflow-wrap: anywhere` + card `overflow: hidden`); Ask Saturn moved from a home-screen
+  card to a floating ✦ button (bottom-right) opening a popover (Esc closes); mobile Google
+  sign-in switched to `signInWithRedirect` on coarse-pointer devices with popup-blocked
+  fallback + `getRedirectResult` error surfacing; **landing page added as `index.html`**
+  (Saturn-styled, self-contained CSS, light/dark via `prefers-color-scheme`) with the app
+  moved to `app.html` (→ `/app` with Vercel cleanUrls). Firebase config filled from the
+  user's project (`saturn-1165b`) — ⚠️ `appId` value looks like the storageBucket; awaiting
+  the real `1:…:web:…` value. User's own edit kept: sidebar motto now "Connect ideas".
+
 ## Features shipped
 - Two-pane Saturn-styled UI (cream/terracotta, Baloo 2 + Quicksand, sidebar 252px)
 - Create / edit / delete notes; one-button Edit/Preview toggle

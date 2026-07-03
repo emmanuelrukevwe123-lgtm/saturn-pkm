@@ -759,10 +759,17 @@ async function initGoogleAuth() {
       auth: firebaseAuth,
       provider,
       signInWithPopup: auth.signInWithPopup,
+      signInWithRedirect: auth.signInWithRedirect,
       signOut: auth.signOut
     };
     authStatus = "ready";
     renderAuth();
+    // Surface errors from a redirect-based sign-in round trip (mobile flow).
+    auth.getRedirectResult(firebaseAuth).catch((error) => {
+      authStatus = "ready";
+      authError = friendlyAuthError(error);
+      renderAuth();
+    });
     auth.onAuthStateChanged(
       firebaseAuth,
       (user) => {
@@ -792,8 +799,22 @@ async function signInWithGoogle() {
   try {
     authStatus = "loading";
     renderAuth();
+    // Popups are unreliable on touch devices — go straight to the
+    // redirect flow there, and fall back to it if a popup is blocked.
+    if (window.matchMedia("(pointer: coarse)").matches) {
+      await authApi.signInWithRedirect(authApi.auth, authApi.provider);
+      return;
+    }
     await authApi.signInWithPopup(authApi.auth, authApi.provider);
   } catch (error) {
+    if (error.code === "auth/popup-blocked") {
+      try {
+        await authApi.signInWithRedirect(authApi.auth, authApi.provider);
+        return;
+      } catch (redirectError) {
+        error = redirectError;
+      }
+    }
     authStatus = "ready";
     authError = friendlyAuthError(error);
     renderAuth();
@@ -1059,6 +1080,8 @@ const aiSummarizeBtn = $("#ai-summarize");
 const aiSummaryPanel = $("#ai-summary");
 const aiSummaryBody  = $("#ai-summary-body");
 const aiInsertBtn    = $("#ai-insert");
+const askFab   = $("#ask-fab");
+const askPop   = $("#ask-pop");
 const askForm  = $("#ask-form");
 const askInput = $("#ask-input");
 const askBtn   = $("#ask-btn");
@@ -1179,6 +1202,15 @@ aiInsertBtn.addEventListener("click", () => {
 
 $("#ai-summary-close").addEventListener("click", () => { aiSummaryPanel.hidden = true; });
 $("#ask-close").addEventListener("click", () => { askPanel.hidden = true; });
+
+askFab.addEventListener("click", () => {
+  askPop.hidden = !askPop.hidden;
+  if (!askPop.hidden && aiReady()) askInput.focus();
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") askPop.hidden = true;
+});
 
 askForm.addEventListener("submit", (e) => {
   e.preventDefault();
