@@ -140,7 +140,9 @@ Open `public/index.html` in any browser. From Windows:
 (or from WSL: `cd ~/"Learning Software"/public && python3 -m http.server` → http://localhost:8000)
 
 ## Deployment
-Target: **Vercel free (Hobby) plan** as a static site — see `docs/DEPLOY.md`.
-`vercel.json` is committed (no build command, output dir `public/`). Pushed to GitHub
-(https://github.com/emmanuelrukevwe123-lgtm/saturn-pkm) on 2026-07-03; not yet
-connected to Vercel.
+**LIVE at https://saturn-pkm.vercel.app** (Vercel free Hobby plan; auto-deploys on every
+push to `main`). Verified 2026-07-03: landing at `/`, app at `/app`, static assets 200,
+`/api/ai` correctly returns 405 on GET and 401 to unauthenticated POSTs (proving
+`GEMINI_API_KEY` + `FIREBASE_PROJECT_ID` env vars are set), and the deployed
+`firebase-config.js` carries the corrected appId. Firebase authorized domain added
+by the user. GitHub repo: https://github.com/emmanuelrukevwe123-lgtm/saturn-pkm.
