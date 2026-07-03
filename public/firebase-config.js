@@ -4,7 +4,5 @@ window.SATURN_FIREBASE_CONFIG = {
   apiKey: "AIzaSyArkYHiyBalyozCwxa_vDxJlz8zmT3H9wc",
   authDomain: "saturn-1165b.firebaseapp.com",
   projectId: "saturn-1165b",
-  // TODO: this looks like the storageBucket — the real appId is
-  // "1:<number>:web:<hash>" (Firebase console → Project settings → Your apps).
-  appId: "saturn-1165b.firebasestorage.app",
+  appId: "1:327963512429:web:0d3e7debd2fc69063bf964"
 };
