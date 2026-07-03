@@ -82,6 +82,9 @@ other via `[[Note title]]`, and show backlinks. Data lives in `localStorage`.
   added optional Firebase Google sign-in UI/config/docs, and added `CODEX_CONTEXT.md`.
 - **2026-07-02** — Added Dead Stars bin for deleted notes, restore/delete-forever controls,
   one-button Edit/Preview toggle, and explicit Save changes flow for note edits.
+- **2026-07-03** — Initialized the git repo (`main`), set git identity, and pushed to
+  GitHub: https://github.com/emmanuelrukevwe123-lgtm/saturn-pkm (private). Ready for
+  Vercel import per `docs/DEPLOY.md` Option A; Vercel account connection still pending.
 
 ## Features shipped
 - Two-pane Saturn-styled UI (cream/terracotta, Baloo 2 + Quicksand, sidebar 252px)
@@ -116,5 +119,6 @@ Open `public/index.html` in any browser. From Windows:
 
 ## Deployment
 Target: **Vercel free (Hobby) plan** as a static site — see `docs/DEPLOY.md`.
-`vercel.json` is committed (no build command, output dir `public/`). Not yet a git
-repo / not yet deployed as of 2026-07-02.
+`vercel.json` is committed (no build command, output dir `public/`). Pushed to GitHub
+(https://github.com/emmanuelrukevwe123-lgtm/saturn-pkm) on 2026-07-03; not yet
+connected to Vercel.
