@@ -404,7 +404,7 @@ body.dark {
   animation: riseIn .2s ease both;
 }
 .ask-form { display: flex; gap: 10px; align-items: center; margin-top: 4px; }
-.ask-form .field { flex: 1; }
+.ask-form .field { flex: 1; min-width: 0; }
 .ask-form .pill { padding: 12px 22px; font-size: 14px; }
 
 .ai-panel {

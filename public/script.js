@@ -659,12 +659,13 @@ function renderAuth() {
   if (!authName) return;
 
   const signedIn = !!currentUser;
+  // Privacy: never show the email address — name (or a generic label) only.
   authName.textContent = signedIn
-    ? currentUser.displayName || currentUser.email || "Google account"
+    ? currentUser.displayName || "Google account"
     : "Not signed in";
 
   if (signedIn) {
-    authMeta.textContent = currentUser.email || "Local Google notebook";
+    authMeta.textContent = "Signed in with Google";
   } else if (authStatus === "unconfigured") {
     authMeta.textContent = "Add Firebase config to enable login.";
   } else if (authStatus === "loading" || authStatus === "checking") {
