@@ -44,6 +44,7 @@ const screens = {
   home: $("#screen-home"),
   note: $("#screen-note"),
   tags: $("#screen-tags"),
+  graph: $("#screen-graph"),
   progress: $("#screen-progress"),
   bin: $("#screen-bin"),
   add: $("#screen-add"),
@@ -345,6 +346,7 @@ function renderScreen() {
   if (screen === "home") renderHome();
   else if (screen === "note") renderNote();
   else if (screen === "tags") renderTags();
+  else if (screen === "graph") renderGraph();
   else if (screen === "progress") renderProgress();
   else if (screen === "bin") renderBin();
 }
@@ -1072,6 +1074,209 @@ function seedIfEmpty() {
   ];
   save();
 }
+
+// ---------- Graph (force-directed map of the knowledge web) ----------
+// Hand-rolled canvas simulation, no libraries: notes repel each other,
+// [[links]] pull their two notes together, everything drifts toward the
+// center. Drag a star to rearrange; tap one to open that note.
+const graphCanvas = $("#graph-canvas");
+const graphEmpty = $("#graph-empty");
+let gNodes = [];        // {id, title, x, y, vx, vy, deg, r}
+let gEdges = [];        // [indexA, indexB]
+let gAnim = null;       // requestAnimationFrame handle
+let gHeat = 0;          // remaining simulation frames
+let gHot = null;        // hovered node
+let gDrag = null;       // node being dragged
+
+function buildGraphData() {
+  const jitter = () => (Math.random() - 0.5) * 30;
+  gNodes = notes.map((n, i) => {
+    const angle = (i / Math.max(notes.length, 1)) * Math.PI * 2;
+    return {
+      id: n.id, title: n.title,
+      x: Math.cos(angle) * 140 + jitter(),
+      y: Math.sin(angle) * 140 + jitter(),
+      vx: 0, vy: 0, deg: 0, r: 6
+    };
+  });
+  const index = new Map(gNodes.map((g, i) => [g.id, i]));
+  const seen = new Set();
+  gEdges = [];
+  for (const n of notes) {
+    for (const t of linksIn(n.body)) {
+      const target = findByTitle(t);
+      if (!target || target.id === n.id) continue;
+      const key = Math.min(n.id, target.id) + ":" + Math.max(n.id, target.id);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const a = index.get(n.id), b = index.get(target.id);
+      gEdges.push([a, b]);
+      gNodes[a].deg++;
+      gNodes[b].deg++;
+    }
+  }
+  for (const g of gNodes) g.r = 6 + Math.min(g.deg, 6) * 1.6;
+}
+
+function graphStep() {
+  // Pairwise repulsion
+  for (let i = 0; i < gNodes.length; i++) {
+    for (let j = i + 1; j < gNodes.length; j++) {
+      const a = gNodes[i], b = gNodes[j];
+      let dx = a.x - b.x, dy = a.y - b.y;
+      let d2 = dx * dx + dy * dy;
+      if (d2 < 1) { dx = Math.random() - 0.5; dy = Math.random() - 0.5; d2 = 1; }
+      const f = 5200 / d2;
+      const d = Math.sqrt(d2);
+      a.vx += (dx / d) * f; a.vy += (dy / d) * f;
+      b.vx -= (dx / d) * f; b.vy -= (dy / d) * f;
+    }
+  }
+  // Springs along links
+  for (const [i, j] of gEdges) {
+    const a = gNodes[i], b = gNodes[j];
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const d = Math.sqrt(dx * dx + dy * dy) || 1;
+    const f = (d - 120) * 0.02;
+    a.vx += (dx / d) * f; a.vy += (dy / d) * f;
+    b.vx -= (dx / d) * f; b.vy -= (dy / d) * f;
+  }
+  // Gentle gravity toward the center + damping
+  for (const g of gNodes) {
+    if (g === gDrag) { g.vx = 0; g.vy = 0; continue; }
+    g.vx -= g.x * 0.015; g.vy -= g.y * 0.015;
+    g.vx *= 0.85; g.vy *= 0.85;
+    g.x += g.vx; g.y += g.vy;
+  }
+}
+
+function graphDraw() {
+  const ctx = graphCanvas.getContext("2d");
+  const dpr = window.devicePixelRatio || 1;
+  const w = graphCanvas.clientWidth, h = graphCanvas.clientHeight;
+  if (graphCanvas.width !== w * dpr || graphCanvas.height !== h * dpr) {
+    graphCanvas.width = w * dpr;
+    graphCanvas.height = h * dpr;
+  }
+  const cs = getComputedStyle(document.body);
+  const ink = cs.getPropertyValue("--ink").trim();
+  const muted = cs.getPropertyValue("--muted").trim();
+  const line = cs.getPropertyValue("--line").trim();
+  const surface = cs.getPropertyValue("--surface").trim();
+
+  ctx.setTransform(dpr, 0, 0, dpr, dpr * w / 2, dpr * h / 2);
+  ctx.clearRect(-w / 2, -h / 2, w, h);
+
+  const showLabels = gNodes.length <= 60;
+  ctx.lineWidth = 1.2;
+  for (const [i, j] of gEdges) {
+    const a = gNodes[i], b = gNodes[j];
+    const hotEdge = gHot && (a === gHot || b === gHot);
+    ctx.strokeStyle = hotEdge ? ink : line;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  }
+  for (const g of gNodes) {
+    ctx.beginPath();
+    ctx.arc(g.x, g.y, g.r, 0, Math.PI * 2);
+    ctx.fillStyle = ink;
+    ctx.fill();
+    if (g === gHot) {
+      ctx.strokeStyle = ink;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(g.x, g.y, g.r + 4, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.lineWidth = 1.2;
+    }
+    if (showLabels || g === gHot) {
+      const label = g.title.length > 20 ? g.title.slice(0, 19) + "…" : g.title;
+      ctx.font = "600 11px Quicksand, sans-serif";
+      ctx.textAlign = "center";
+      // Halo so labels stay readable over edges
+      ctx.strokeStyle = surface;
+      ctx.lineWidth = 3;
+      ctx.strokeText(label, g.x, g.y + g.r + 14);
+      ctx.lineWidth = 1.2;
+      ctx.fillStyle = g === gHot ? ink : muted;
+      ctx.fillText(label, g.x, g.y + g.r + 14);
+    }
+  }
+}
+
+function graphLoop() {
+  if (screen !== "graph") { gAnim = null; return; }
+  if (gHeat > 0) { graphStep(); gHeat--; }
+  graphDraw();
+  gAnim = requestAnimationFrame(graphLoop);
+}
+
+function renderGraph() {
+  const hasEdges = notes.length > 0;
+  graphEmpty.hidden = notes.length > 0;
+  graphCanvas.parentElement.hidden = !hasEdges;
+  if (!hasEdges) return;
+  buildGraphData();
+  gHeat = 300;
+  gHot = null;
+  if (!gAnim) gAnim = requestAnimationFrame(graphLoop);
+}
+
+// Canvas coordinates -> simulation coordinates (origin at canvas center)
+function graphPoint(e) {
+  const rect = graphCanvas.getBoundingClientRect();
+  return {
+    x: e.clientX - rect.left - rect.width / 2,
+    y: e.clientY - rect.top - rect.height / 2
+  };
+}
+
+function graphNodeAt(p) {
+  let best = null, bestD = Infinity;
+  for (const g of gNodes) {
+    const dx = g.x - p.x, dy = g.y - p.y;
+    const d = Math.sqrt(dx * dx + dy * dy);
+    if (d < Math.max(g.r + 8, 16) && d < bestD) { best = g; bestD = d; }
+  }
+  return best;
+}
+
+graphCanvas.addEventListener("pointerdown", (e) => {
+  const node = graphNodeAt(graphPoint(e));
+  if (!node) return;
+  gDrag = node;
+  gDrag.moved = false;
+  graphCanvas.setPointerCapture(e.pointerId);
+});
+
+graphCanvas.addEventListener("pointermove", (e) => {
+  const p = graphPoint(e);
+  if (gDrag) {
+    gDrag.x = p.x; gDrag.y = p.y;
+    gDrag.moved = true;
+    gHeat = Math.max(gHeat, 60); // let neighbours settle around the new spot
+    return;
+  }
+  gHot = graphNodeAt(p);
+  graphCanvas.style.cursor = gHot ? "pointer" : "default";
+});
+
+graphCanvas.addEventListener("pointerup", (e) => {
+  if (!gDrag) return;
+  const node = gDrag;
+  gDrag = null;
+  graphCanvas.releasePointerCapture(e.pointerId);
+  // A press without movement is a tap: open the note
+  if (!node.moved) openNote(node.id);
+});
+
+graphCanvas.addEventListener("pointerleave", () => { gHot = null; });
+
+window.addEventListener("resize", () => {
+  if (screen === "graph") gHeat = Math.max(gHeat, 30);
+});
 
 // ---------- AI (Summarize + Ask Saturn) ----------
 // The browser never holds the Gemini key: requests go to /api/ai (a Vercel

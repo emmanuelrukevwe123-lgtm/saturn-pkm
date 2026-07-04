@@ -89,6 +89,13 @@ A note with no links in *and* no links out is an **orphan**. The rings
 throughout the app show what fraction of your notes are connected — the goal
 of a Zettelkasten is to keep orphans near zero.
 
+## Graph screen
+
+The **Graph** screen draws your whole knowledge web: every note is a star,
+every `[[link]]` a thread between two stars. Bigger stars have more
+connections; unconnected notes drift alone. Drag stars to rearrange the
+map, and tap any star to open that note.
+
 ## Finding notes
 
 - **Search** (Notes screen) — live-filters by title *and* body text.

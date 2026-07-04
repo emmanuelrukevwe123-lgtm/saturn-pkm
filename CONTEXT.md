@@ -108,6 +108,17 @@ other via `[[Note title]]`, and show backlinks. Data lives in `localStorage`.
   user's project (`saturn-1165b`) — ⚠️ `appId` value looks like the storageBucket; awaiting
   the real `1:…:web:…` value. User's own edit kept: sidebar motto now "Connect ideas".
 
+- **2026-07-05** — Post-launch polish (user requests): email address no longer shown in the
+  sidebar (name + "Signed in with Google" only); Ask Saturn placeholder shortened and input
+  overflow fixed (`min-width: 0`); **Graph screen added** (user chose "visual graph view"
+  when asked how to evolve backlinks) — hand-rolled canvas force simulation, no libraries:
+  notes as stars sized by degree, [[links]] as threads, drag to rearrange, tap to open,
+  labels with surface halo, theme-aware colors read from CSS vars each frame. Verified via
+  Playwright: renders desktop + mobile, tap-to-open works, no console errors. Sign-in
+  confirmed working by the user after the auth-proxy fix (vercel.json rewrites /__/auth/*
+  to firebaseapp.com; authDomain = saturn-pkm.vercel.app; user added the redirect URI to
+  the Google OAuth client).
+
 ## Features shipped
 - Two-pane Saturn-styled UI (cream/terracotta, Baloo 2 + Quicksand, sidebar 252px)
 - Create / edit / delete notes; one-button Edit/Preview toggle

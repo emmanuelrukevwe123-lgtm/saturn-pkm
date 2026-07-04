@@ -37,6 +37,7 @@
       <nav class="side-nav">
         <button class="nav-link active" data-screen="home">Notes</button>
         <button class="nav-link" data-screen="tags">Tags</button>
+        <button class="nav-link" data-screen="graph">Graph</button>
         <button class="nav-link" data-screen="progress">Progress</button>
         <button class="nav-link" data-screen="bin">Bin</button>
       </nav>
@@ -152,6 +153,18 @@
             connected it is.</p>
           <div id="tag-groups"></div>
           <div class="empty" id="tags-empty" hidden>No tags yet — add some to a note.</div>
+        </section>
+
+        <!-- GRAPH -->
+        <section id="screen-graph" hidden>
+          <div class="eyebrow">Your web</div>
+          <h1 class="page-title tight">Graph</h1>
+          <p class="page-sub">Every note is a star and every [[link]] is a thread between them. Drag the stars
+            around, or tap one to open that note.</p>
+          <div class="graph-card">
+            <canvas id="graph-canvas"></canvas>
+          </div>
+          <div class="empty" id="graph-empty" hidden>Nothing to map yet — connect two notes with [[double brackets]].</div>
         </section>
 
         <!-- PROGRESS -->
