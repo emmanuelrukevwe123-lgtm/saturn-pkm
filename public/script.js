@@ -7,7 +7,7 @@
    Saturn design export's Today / Topics / Progress / Add views.
    ============================================================ */
 
-const APP_VERSION = "v10";
+const APP_VERSION = "v11";
 
 // ---------- Visible error reporting ----------
 // If anything throws, show it on screen instead of failing silently —
@@ -936,6 +936,17 @@ function markCloudFailure(error) {
       : "error";
 }
 
+// Firestore's SDK retries connection problems forever (endpoint blocked by
+// an extension, database not created yet…) — cap every sync round so the
+// UI can never sit on "Syncing…" indefinitely.
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("cloud sync timed out")), ms))
+  ]);
+}
+
 // Merge cloud + local: per note id, the newest timestamp wins; when an id
 // appears both active and in the bin, the later event decides where it lives.
 function mergeCloudState(cloudNotes, cloudBin) {
@@ -963,10 +974,10 @@ async function pullAndMergeCloud() {
   renderAuth();
   try {
     const uid = currentUser.uid;
-    const [noteSnap, binSnap] = await Promise.all([
+    const [noteSnap, binSnap] = await withTimeout(Promise.all([
       cloudApi.getDocs(cloudApi.collection(cloudApi.db, "users", uid, "notes")),
       cloudApi.getDocs(cloudApi.collection(cloudApi.db, "users", uid, "bin"))
-    ]);
+    ]), 15000);
     const rawNotes = [], rawBin = [];
     noteSnap.forEach((d) => rawNotes.push(d.data()));
     binSnap.forEach((d) => rawBin.push(d.data()));
@@ -1020,7 +1031,7 @@ async function pushToCloud() {
     };
     syncCollection(notes, "notes", cloudNoteStamp);
     syncCollection(deletedNotes, "bin", cloudBinStamp);
-    await Promise.all(jobs);
+    await withTimeout(Promise.all(jobs), 15000);
     cloudStatus = "synced";
   } catch (error) {
     markCloudFailure(error);
