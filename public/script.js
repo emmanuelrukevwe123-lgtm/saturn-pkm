@@ -431,6 +431,9 @@ function showScreen(name) {
   if (name !== "note") noteDraft = null;
   screen = name;
   for (const [key, el] of Object.entries(screens)) el.hidden = key !== name;
+  // Every screen starts at its top — otherwise a tap from deep in a long
+  // list lands mid-page on the next screen and looks like nothing opened.
+  document.querySelector(".main").scrollTop = 0;
   document.querySelectorAll(".nav-link").forEach((b) =>
     // the note screen still belongs to "Notes" in the nav
     b.classList.toggle("active", b.dataset.screen === (name === "note" ? "home" : name))
