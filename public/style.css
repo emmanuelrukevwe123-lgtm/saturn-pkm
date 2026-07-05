@@ -496,3 +496,8 @@ body.nav-open .menu-toggle span:nth-child(3) { transform: translateY(-6px) rotat
   color: var(--muted); opacity: 0.65; font-style: italic;
   pointer-events: none;
 }
+
+.app-version {
+  margin-top: 10px; text-align: center; font-size: 10px; font-weight: 700;
+  letter-spacing: 1px; color: var(--muted); opacity: 0.7;
+}

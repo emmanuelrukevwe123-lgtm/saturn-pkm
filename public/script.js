@@ -7,6 +7,28 @@
    Saturn design export's Today / Topics / Progress / Add views.
    ============================================================ */
 
+const APP_VERSION = "v9";
+
+// ---------- Visible error reporting ----------
+// If anything throws, show it on screen instead of failing silently —
+// crucial for diagnosing device-specific problems we can't reproduce.
+function reportAppError(message) {
+  let el = document.getElementById("app-error");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "app-error";
+    el.style.cssText =
+      "position:fixed;top:0;left:0;right:0;z-index:999;background:#B3261E;color:#fff;" +
+      "font:600 13px/1.4 sans-serif;padding:10px 14px;word-break:break-word;";
+    document.body.appendChild(el);
+  }
+  el.textContent = "Saturn " + APP_VERSION + " error: " + message +
+    " — please screenshot this message.";
+}
+window.addEventListener("error", (e) => reportAppError(e.message || "unknown error"));
+window.addEventListener("unhandledrejection", (e) =>
+  reportAppError(String((e.reason && e.reason.message) || e.reason || "unknown rejection")));
+
 const STORAGE_KEY = "saturn-pkm-notes";
 const TRASH_KEY = "saturn-pkm-deleted-notes";
 const THEME_KEY = "saturn-pkm-theme";
@@ -76,7 +98,16 @@ const googleSignOut = $("#google-signout");
 function parseStoredNotes(raw) {
   try {
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    // Normalize each note so a missing/odd field can never crash rendering.
+    return parsed
+      .filter((n) => n && typeof n === "object" && n.id != null)
+      .map((n) => ({
+        ...n,
+        title: typeof n.title === "string" ? n.title : "Untitled note",
+        body: typeof n.body === "string" ? n.body : "",
+        tags: Array.isArray(n.tags) ? n.tags.filter((t) => typeof t === "string") : [],
+      }));
   } catch {
     return [];
   }
@@ -443,12 +474,17 @@ function showScreen(name) {
 }
 
 function renderScreen() {
-  if (screen === "home") renderHome();
-  else if (screen === "note") renderNote();
-  else if (screen === "tags") renderTags();
-  else if (screen === "graph") renderGraph();
-  else if (screen === "progress") renderProgress();
-  else if (screen === "bin") renderBin();
+  try {
+    if (screen === "home") renderHome();
+    else if (screen === "note") renderNote();
+    else if (screen === "tags") renderTags();
+    else if (screen === "graph") renderGraph();
+    else if (screen === "progress") renderProgress();
+    else if (screen === "bin") renderBin();
+  } catch (err) {
+    reportAppError((err && err.message) || String(err));
+    throw err;
+  }
 }
 
 // ---------- Home (Notes) ----------
@@ -1552,6 +1588,8 @@ askForm.addEventListener("submit", (e) => {
 });
 
 // ---------- Boot ----------
+const versionEl = document.getElementById("app-version");
+if (versionEl) versionEl.textContent = "SATURN " + APP_VERSION.toUpperCase();
 load();
 seedIfEmpty();
 applyTheme();
