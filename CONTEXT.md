@@ -153,6 +153,14 @@ summaries + "Ask Saturn" Q&A over the user's notes).
   to firebaseapp.com; authDomain = saturn-pkm.vercel.app; user added the redirect URI to
   the Google OAuth client).
 
+- **2026-07-05** — Hideable sidebar (user request): fixed hamburger button top-left on all
+  screen sizes. Desktop: collapses/restores the sidebar (`body.nav-hidden`). Mobile: sidebar
+  is now a slide-in drawer (`body.nav-open`) with dimmed backdrop — replaces the previous
+  top-bar layout; button morphs to an X; closes on backdrop tap, nav selection, or Esc.
+  Landing copy updated to drop the "backlinks" pitch in favor of the Graph (hero, feature
+  card, how-to step, meta description). Note: the per-note "Linked from" panel still exists
+  in the app. Verified via Playwright at 1440px/390px, no errors.
+
 ## Features shipped
 - Two-pane Saturn-styled UI (monochrome light + dark themes, Baloo 2 + Quicksand, 252px sidebar)
 - **Mobile responsive** — sidebar collapses to a wrapping top bar under 880px
