@@ -7,7 +7,7 @@
    Saturn design export's Today / Topics / Progress / Add views.
    ============================================================ */
 
-const APP_VERSION = "v9";
+const APP_VERSION = "v10";
 
 // ---------- Visible error reporting ----------
 // If anything throws, show it on screen instead of failing silently —
@@ -131,10 +131,12 @@ function userDeletedStorageKey(user) {
 
 function save() {
   localStorage.setItem(storageKey, JSON.stringify(notes));
+  scheduleCloudPush();
 }
 
 function saveDeleted() {
   localStorage.setItem(deletedStorageKey, JSON.stringify(deletedNotes));
+  scheduleCloudPush();
 }
 
 function loadNotes() {
@@ -799,7 +801,12 @@ function renderAuth() {
     : "Not signed in";
 
   if (signedIn) {
-    authMeta.textContent = "Signed in with Google";
+    authMeta.textContent = {
+      syncing: "Syncing…",
+      synced: "Synced across your devices",
+      error: "Sync error — will retry",
+      unavailable: "Signed in — cloud sync not set up"
+    }[cloudStatus] || "Signed in with Google";
   } else if (authStatus === "unconfigured") {
     authMeta.textContent = "Add Firebase config to enable login.";
   } else if (authStatus === "loading" || authStatus === "checking") {
@@ -864,14 +871,180 @@ function switchNotebookForUser(user) {
     openTag = null;
     searchInput.value = "";
     loadNotes();
-    seedIfEmpty();
+    // Only seed the signed-out notebook — a signed-in user's notes may be
+    // in the cloud, and seeding before the pull would push starter notes up.
+    if (!user) seedIfEmpty();
     showScreen("home");
   } else {
     renderScreen();
   }
 
+  if (user) {
+    cloudStatus = "off"; // clear a previous account's "unavailable" latch
+    pullAndMergeCloud();
+  } else {
+    resetCloudState();
+  }
+
   renderAuth();
 }
+
+// ---------- Cloud sync (Firestore) ----------
+// Signed-in notes replicate to the user's private Firestore collections
+// (users/<uid>/notes and users/<uid>/bin — owner-only security rules).
+// localStorage stays the offline-first source; sync is a write-through
+// layer: pull+merge on sign-in and on tab focus, debounced push on save.
+let cloudApi = null;                 // Firestore bindings, set in initGoogleAuth
+let cloudStatus = "off";             // off | syncing | synced | error | unavailable
+let cloudNoteStamp = new Map();      // note id -> timestamp last seen in cloud
+let cloudBinStamp = new Map();
+let cloudPushTimer = null;
+let cloudLastPull = 0;
+
+function noteTimestamp(n) {
+  return n.deletedAt || n.updated || n.created || "";
+}
+
+function cloudReady() {
+  return !!(cloudApi && currentUser) && cloudStatus !== "unavailable";
+}
+
+function cloudDocRef(kind, id) {
+  return cloudApi.doc(cloudApi.db, "users", currentUser.uid, kind, String(id));
+}
+
+// Strip to known fields so foreign junk never lands in the database
+function cloudDocFor(n) {
+  const d = {
+    id: n.id,
+    title: n.title,
+    body: n.body,
+    tags: n.tags,
+    created: n.created || "",
+    updated: n.updated || ""
+  };
+  if (n.deletedAt) d.deletedAt = n.deletedAt;
+  return d;
+}
+
+function markCloudFailure(error) {
+  const msg = String((error && error.message) || error);
+  // Firestore not enabled / rules missing: stop retrying this session
+  cloudStatus =
+    error?.code === "permission-denied" || /not.*(enabled|exist)|precondition/i.test(msg)
+      ? "unavailable"
+      : "error";
+}
+
+// Merge cloud + local: per note id, the newest timestamp wins; when an id
+// appears both active and in the bin, the later event decides where it lives.
+function mergeCloudState(cloudNotes, cloudBin) {
+  const best = new Map();
+  const offer = (n, inBin) => {
+    const key = String(n.id);
+    const current = best.get(key);
+    if (!current || noteTimestamp(n) > noteTimestamp(current.note)) {
+      best.set(key, { note: n, bin: inBin });
+    }
+  };
+  for (const n of notes) offer(n, false);
+  for (const n of deletedNotes) offer(n, true);
+  for (const n of cloudNotes) offer(n, false);
+  for (const n of cloudBin) offer(n, true);
+  notes = [];
+  deletedNotes = [];
+  for (const { note, bin } of best.values()) (bin ? deletedNotes : notes).push(note);
+  notes.sort((a, b) => ((a.created || "") < (b.created || "") ? -1 : 1));
+}
+
+async function pullAndMergeCloud() {
+  if (!cloudReady()) return;
+  cloudStatus = "syncing";
+  renderAuth();
+  try {
+    const uid = currentUser.uid;
+    const [noteSnap, binSnap] = await Promise.all([
+      cloudApi.getDocs(cloudApi.collection(cloudApi.db, "users", uid, "notes")),
+      cloudApi.getDocs(cloudApi.collection(cloudApi.db, "users", uid, "bin"))
+    ]);
+    const rawNotes = [], rawBin = [];
+    noteSnap.forEach((d) => rawNotes.push(d.data()));
+    binSnap.forEach((d) => rawBin.push(d.data()));
+    // Reuse the localStorage normalizer so odd cloud docs can't crash us
+    const cloudNotes = parseStoredNotes(JSON.stringify(rawNotes));
+    const cloudBin = parseStoredNotes(JSON.stringify(rawBin));
+
+    cloudNoteStamp = new Map(cloudNotes.map((n) => [String(n.id), noteTimestamp(n)]));
+    cloudBinStamp = new Map(cloudBin.map((n) => [String(n.id), noteTimestamp(n)]));
+
+    mergeCloudState(cloudNotes, cloudBin);
+    cloudLastPull = Date.now();
+    cloudStatus = "synced";
+    save();        // persists merged state locally + schedules push of local-only notes
+    saveDeleted();
+    renderScreen();
+  } catch (error) {
+    markCloudFailure(error);
+  }
+  renderAuth();
+}
+
+function scheduleCloudPush() {
+  if (!cloudReady()) return;
+  clearTimeout(cloudPushTimer);
+  cloudPushTimer = setTimeout(pushToCloud, 1500);
+}
+
+async function pushToCloud() {
+  if (!cloudReady()) return;
+  cloudStatus = "syncing";
+  renderAuth();
+  try {
+    const jobs = [];
+    const syncCollection = (list, kind, stamps) => {
+      const localIds = new Set(list.map((n) => String(n.id)));
+      for (const n of list) {
+        const key = String(n.id);
+        if (stamps.get(key) !== noteTimestamp(n)) {
+          jobs.push(
+            cloudApi.setDoc(cloudDocRef(kind, key), cloudDocFor(n))
+              .then(() => stamps.set(key, noteTimestamp(n)))
+          );
+        }
+      }
+      for (const key of [...stamps.keys()]) {
+        if (!localIds.has(key)) {
+          jobs.push(cloudApi.deleteDoc(cloudDocRef(kind, key)).then(() => stamps.delete(key)));
+        }
+      }
+    };
+    syncCollection(notes, "notes", cloudNoteStamp);
+    syncCollection(deletedNotes, "bin", cloudBinStamp);
+    await Promise.all(jobs);
+    cloudStatus = "synced";
+  } catch (error) {
+    markCloudFailure(error);
+  }
+  renderAuth();
+}
+
+function resetCloudState() {
+  cloudStatus = "off";
+  cloudNoteStamp = new Map();
+  cloudBinStamp = new Map();
+  clearTimeout(cloudPushTimer);
+}
+
+// Second device picks up changes when its tab regains focus (≥30s apart)
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  if (cloudReady() && Date.now() - cloudLastPull > 30_000) pullAndMergeCloud();
+});
+
+// Best-effort flush of a pending debounced push when the tab closes
+window.addEventListener("pagehide", () => {
+  if (cloudPushTimer) pushToCloud();
+});
 
 async function initGoogleAuth() {
   const config = window.SATURN_FIREBASE_CONFIG;
@@ -882,12 +1055,21 @@ async function initGoogleAuth() {
   }
 
   try {
-    const [{ initializeApp }, auth] = await Promise.all([
+    const [{ initializeApp }, auth, firestore] = await Promise.all([
       import("https://www.gstatic.com/firebasejs/" + FIREBASE_SDK_VERSION + "/firebase-app.js"),
-      import("https://www.gstatic.com/firebasejs/" + FIREBASE_SDK_VERSION + "/firebase-auth.js")
+      import("https://www.gstatic.com/firebasejs/" + FIREBASE_SDK_VERSION + "/firebase-auth.js"),
+      import("https://www.gstatic.com/firebasejs/" + FIREBASE_SDK_VERSION + "/firebase-firestore.js")
     ]);
     const app = initializeApp(config);
     const firebaseAuth = auth.getAuth(app);
+    cloudApi = {
+      db: firestore.getFirestore(app),
+      collection: firestore.collection,
+      doc: firestore.doc,
+      getDocs: firestore.getDocs,
+      setDoc: firestore.setDoc,
+      deleteDoc: firestore.deleteDoc
+    };
     const provider = new auth.GoogleAuthProvider();
     authApi = {
       auth: firebaseAuth,

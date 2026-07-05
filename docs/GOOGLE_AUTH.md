@@ -63,3 +63,31 @@ Then visit `http://localhost:8000`.
 - Signed-out notes remain under `saturn-pkm-notes`.
 - Signing in on another browser or device will not show the same notes until a
   cloud database sync feature is added.
+
+## 5. Enable Cloud Sync (Firestore)
+
+Signed-in notes sync across devices through Cloud Firestore. One-time setup:
+
+1. Firebase console → **Build → Firestore Database** → **Create database**.
+2. Choose **production mode** and any region → **Enable**.
+3. Open the **Rules** tab, replace the contents with:
+
+   ```
+   rules_version = '2';
+   service cloud.firestore {
+     match /databases/{database}/documents {
+       match /users/{uid}/{document=**} {
+         allow read, write: if request.auth != null && request.auth.uid == uid;
+       }
+     }
+   }
+   ```
+
+4. Click **Publish**.
+
+These rules mean each signed-in user can read and write **only their own**
+notes (`users/<their-uid>/…`) — nobody can see anyone else's notebook.
+
+After this, the account card in the app shows "Synced across your devices"
+when signed in. If it says "cloud sync not set up", revisit these steps.
+The free (Spark) plan is more than enough for personal note-taking.

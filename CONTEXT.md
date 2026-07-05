@@ -172,6 +172,20 @@ summaries + "Ask Saturn" Q&A over the user's notes).
   placeholder). Verified via Playwright: bold/heading/list/link save→reload round-trips,
   clean stored text, no false-dirty on reopen.
 
+- **2026-07-05** — **Cloud sync added** (user request after hitting the no-sync limitation):
+  Firestore (same Firebase project, free tier) replicates signed-in users' notes across
+  devices. Data model: per-note docs at `users/<uid>/notes/<id>` + `users/<uid>/bin/<id>`,
+  owner-only rules. Sync: pull+merge on sign-in and on tab focus (≥30s), debounced (1.5s)
+  diff-push hooked into the `save()`/`saveDeleted()` choke points, newest-timestamp-wins
+  merge (bin vs active resolved by later event), pagehide flush, status in the auth card
+  ("Synced across your devices" / "Syncing…" / "Sync error" / "cloud sync not set up" —
+  the last latches when Firestore isn't enabled, no retry spam). Signed-out users stay
+  100% local; user-notebook seeding now skipped on sign-in so starter notes don't push up.
+  Verified: 4 merge cases in-browser (newer-wins both ways, delete propagation, revival
+  after deletion), signed-out no-op, no console errors. ⚠️ Requires the user to enable
+  Firestore + publish rules (docs/GOOGLE_AUTH.md §5) — until then the app shows
+  "cloud sync not set up".
+
 ## Features shipped
 - Two-pane Saturn-styled UI (monochrome light + dark themes, Baloo 2 + Quicksand, 252px sidebar)
 - **Mobile responsive** — sidebar collapses to a wrapping top bar under 880px
