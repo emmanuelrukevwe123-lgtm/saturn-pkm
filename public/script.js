@@ -20,7 +20,6 @@ let deletedStorageKey = TRASH_KEY;
 let selectedId = null;   // which note is open on the note screen
 let activeTag = null;    // tag filter (null = all)
 let searchQuery = "";    // live search text
-let mode = "view";       // "view" | "edit"
 let screen = "home";     // "home" | "note" | "tags" | "progress" | "bin" | "add"
 let openTag = null;      // which tag accordion is expanded
 let dark = false;
@@ -59,11 +58,9 @@ const homeEmpty    = $("#home-empty");
 const titleInput   = $("#note-title");
 const tagsInput    = $("#note-tags");
 const noteEyebrow  = $("#note-eyebrow");
-const renderedBody = $("#rendered-body");
-const bodyEditor   = $("#note-body");
+const renderedBody = $("#rendered-body"); // the rich editor: contenteditable, always styled
 const backlinksEl  = $("#backlinks");
 const noBacklinks  = $("#no-backlinks");
-const modeToggle   = $("#mode-toggle");
 const saveNoteBtn  = $("#save-note");
 const saveStatus   = $("#save-status");
 const deletedList  = $("#deleted-list");
@@ -276,7 +273,106 @@ function renderMarkdown(src) {
     }
   }
   if (inList) html += "</ul>";
-  return html || '<p class="muted">Empty note — switch to Edit to write.</p>';
+  return html;
+}
+
+// ---------- Rich editor (formatting buttons, no visible Markdown) ----------
+// The note body is STILL stored in the same Markdown-ish format (so links,
+// the graph, AI, and old notes keep working) — but the user only ever sees
+// styled text in a contenteditable surface. domToMarkdown converts the
+// editor's DOM back to the storage format on every keystroke.
+function domToMarkdown(root) {
+  const inline = (node) => {
+    let text = "";
+    for (const child of node.childNodes) {
+      if (child.nodeType === Node.TEXT_NODE) { text += child.textContent; continue; }
+      if (child.nodeType !== Node.ELEMENT_NODE) continue;
+      const tag = child.tagName;
+      if (tag === "BR") { text += "\n"; continue; }
+      const inner = inline(child);
+      if (child.classList.contains("wiki-link")) {
+        text += "[[" + (child.dataset.link || inner).trim() + "]]";
+      } else if (tag === "STRONG" || tag === "B") {
+        text += inner.trim() ? "**" + inner + "**" : inner;
+      } else if (tag === "EM" || tag === "I") {
+        text += inner.trim() ? "*" + inner + "*" : inner;
+      } else if (tag === "CODE") {
+        text += inner.trim() ? "`" + inner + "`" : inner;
+      } else {
+        text += inner;
+      }
+    }
+    return text;
+  };
+
+  const out = [];
+  const block = (node) => {
+    for (const child of node.childNodes) {
+      if (child.nodeType === Node.TEXT_NODE) {
+        if (child.textContent.trim()) out.push(child.textContent);
+        continue;
+      }
+      if (child.nodeType !== Node.ELEMENT_NODE) continue;
+      const tag = child.tagName;
+      if (tag === "H1" || tag === "H2" || tag === "H3") {
+        out.push("#".repeat(Number(tag[1])) + " " + inline(child).trim(), "");
+      } else if (tag === "UL" || tag === "OL") {
+        for (const li of child.children) out.push("- " + inline(li).trim());
+        out.push("");
+      } else if (tag === "P" || tag === "DIV") {
+        // A div may itself wrap block children (contenteditable nesting)
+        if (child.querySelector("h1,h2,h3,ul,ol,p,div")) block(child);
+        else out.push(inline(child), "");
+      } else if (tag === "BR") {
+        out.push("");
+      } else {
+        out.push(inline(child), "");
+      }
+    }
+  };
+  block(root);
+  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+// One toolbar action per button; execCommand still works everywhere and
+// keeps us dependency-free. mousedown is prevented so the text selection
+// in the editor survives the button press.
+function currentBlockTag() {
+  let node = window.getSelection()?.anchorNode;
+  while (node && node !== renderedBody) {
+    if (node.nodeType === Node.ELEMENT_NODE && /^H[1-3]$/.test(node.tagName)) return node.tagName;
+    node = node.parentNode;
+  }
+  return null;
+}
+
+function wireFormatting() {
+  const actions = {
+    "fmt-bold": () => document.execCommand("bold"),
+    "fmt-italic": () => document.execCommand("italic"),
+    "fmt-list": () => document.execCommand("insertUnorderedList"),
+    "fmt-heading": () =>
+      document.execCommand("formatBlock", false, currentBlockTag() ? "<p>" : "<h2>"),
+    "fmt-link": () => {
+      const selected = window.getSelection()?.toString().trim();
+      const title = selected || prompt("Link to which note?");
+      if (!title) return;
+      const target = findByTitle(title);
+      const cls = target ? "wiki-link" : "wiki-link missing";
+      document.execCommand(
+        "insertHTML", false,
+        `<a class="${cls}" data-link="${escapeHTML(title)}">${escapeHTML(title)}</a>&nbsp;`
+      );
+    },
+  };
+  for (const [id, run] of Object.entries(actions)) {
+    const btn = $("#" + id);
+    btn.addEventListener("mousedown", (e) => e.preventDefault()); // keep selection
+    btn.addEventListener("click", () => {
+      renderedBody.focus();
+      run(); // execCommand fires "input" on the editor, updating the draft
+    });
+  }
 }
 
 // ---------- Shared builders ----------
@@ -427,14 +523,10 @@ function renderNote() {
   noteEyebrow.textContent = "Note · " + editedLabel(note).replace("edited ", "");
   if (document.activeElement !== titleInput) titleInput.value = draft.title;
   if (document.activeElement !== tagsInput) tagsInput.value = draft.tagsText;
-  if (document.activeElement !== bodyEditor) bodyEditor.value = draft.body;
-
-  renderedBody.hidden = mode !== "view";
-  bodyEditor.hidden = mode !== "edit";
-  modeToggle.textContent = mode === "view" ? "Edit" : "Preview";
-  modeToggle.classList.toggle("active", mode === "edit");
-
-  if (mode === "view") renderedBody.innerHTML = renderMarkdown(draft.body);
+  // Refill the editor only when it isn't being typed in (keeps the caret alive)
+  if (document.activeElement !== renderedBody) {
+    renderedBody.innerHTML = draft.body.trim() ? renderMarkdown(draft.body) : "";
+  }
   updateSaveState();
 
   // Backlinks
@@ -729,7 +821,6 @@ function switchNotebookForUser(user) {
     noteDraft = null;
     activeTag = null;
     searchQuery = "";
-    mode = "view";
     openTag = null;
     searchInput.value = "";
     loadNotes();
@@ -875,17 +966,15 @@ function saveDraft() {
   });
   noteDraft = draftFrom(note);
   save();
-  mode = "view";
   renderScreen();
 }
 
-function openNote(id, startMode = "view") {
+function openNote(id, startMode) {
   if (screen === "note" && selectedId !== id && !confirmDiscardDraft()) return;
   selectedId = id;
-  mode = startMode;
   noteDraft = null;
   showScreen("note");
-  if (startMode === "edit") bodyEditor.focus();
+  if (startMode === "edit") renderedBody.focus();
 }
 
 function deleteNote(id) {
@@ -977,11 +1066,6 @@ ledgerEl.addEventListener("click", (e) => {
 
 // Note screen
 $("#back-link").addEventListener("click", () => showScreen("home"));
-modeToggle.addEventListener("click", () => {
-  mode = mode === "view" ? "edit" : "view";
-  renderNote();
-  if (mode === "edit") bodyEditor.focus();
-});
 saveNoteBtn.addEventListener("click", saveDraft);
 $("#delete-btn").addEventListener("click", () => deleteNote(selectedId));
 
@@ -999,10 +1083,10 @@ tagsInput.addEventListener("input", () => {
   updateSaveState();
 });
 
-bodyEditor.addEventListener("input", () => {
+renderedBody.addEventListener("input", () => {
   const note = getNote(selectedId);
   if (!note) return;
-  ensureDraft(note).body = bodyEditor.value;
+  ensureDraft(note).body = domToMarkdown(renderedBody);
   updateSaveState();
 });
 
@@ -1435,8 +1519,7 @@ aiInsertBtn.addEventListener("click", () => {
   if (!note || !lastSummary) return;
   const draft = ensureDraft(note);
   draft.body = draft.body.replace(/\s+$/, "") + "\n\n## AI summary\n" + lastSummary + "\n";
-  bodyEditor.value = draft.body;
-  if (mode === "view") renderedBody.innerHTML = renderMarkdown(draft.body);
+  renderedBody.innerHTML = renderMarkdown(draft.body);
   updateSaveState();
   aiSummaryPanel.hidden = true;
 });
@@ -1466,6 +1549,7 @@ askForm.addEventListener("submit", (e) => {
 load();
 seedIfEmpty();
 applyTheme();
+wireFormatting();
 renderAuth();
 showScreen("home");
 initGoogleAuth();

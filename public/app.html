@@ -120,7 +120,6 @@
           <input id="note-title" class="title-input" placeholder="Untitled note" autocomplete="off">
 
           <div class="note-tools">
-            <button id="mode-toggle" class="pill active">Edit</button>
             <button id="save-note" class="pill pill-save" disabled>Save changes</button>
             <span id="save-status" class="save-status">Saved</span>
             <span class="spacer"></span>
@@ -132,9 +131,16 @@
           <label class="form-label" for="note-tags">Tags</label>
           <input id="note-tags" class="field" placeholder="tags, comma, separated" autocomplete="off">
 
-          <div id="rendered-body" class="note-card rendered"></div>
-          <textarea id="note-body" class="note-card editor"
-            placeholder="Write in Markdown… link other notes with [[Note title]]" hidden></textarea>
+          <div class="pills edit-tools">
+            <button id="fmt-bold" class="pill fmt" type="button" title="Bold"><strong>B</strong></button>
+            <button id="fmt-italic" class="pill fmt" type="button" title="Italic"><em>I</em></button>
+            <button id="fmt-heading" class="pill fmt" type="button" title="Heading">H</button>
+            <button id="fmt-list" class="pill fmt" type="button" title="Bulleted list">• List</button>
+            <button id="fmt-link" class="pill fmt" type="button" title="Link to another note">[[ link ]]</button>
+          </div>
+
+          <div id="rendered-body" class="note-card rendered rich-editor" contenteditable="true"
+            data-placeholder="Start writing… use the buttons above to format, and [[ link ]] to connect notes."></div>
 
           <div id="ai-summary" class="ai-panel" hidden>
             <div class="ai-panel-head">
@@ -244,7 +250,7 @@
 
             <label class="form-label" for="add-body">First lines</label>
             <textarea id="add-body" class="field add-body"
-              placeholder="Write in Markdown… link other notes with [[Note title]]"></textarea>
+              placeholder="Write your first lines… you can format and link after adding."></textarea>
 
             <button id="add-save" class="save-btn" disabled>Add to Saturn</button>
           </div>

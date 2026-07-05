@@ -482,3 +482,17 @@ body.nav-open .menu-toggle span:nth-child(3) { transform: translateY(-6px) rotat
 @media (max-width: 880px) {
   #graph-canvas { height: 60vh; }
 }
+
+/* ============ Rich editor (formatting buttons, no raw Markdown) ============ */
+.edit-tools { margin: 18px 0 0; }
+.fmt { min-width: 42px; text-align: center; }
+.rich-editor {
+  outline: none; cursor: text; min-height: 320px;
+  caret-color: var(--ink);
+}
+.rich-editor:focus { border-color: var(--accent); }
+.rich-editor:empty::before {
+  content: attr(data-placeholder);
+  color: var(--muted); opacity: 0.65; font-style: italic;
+  pointer-events: none;
+}

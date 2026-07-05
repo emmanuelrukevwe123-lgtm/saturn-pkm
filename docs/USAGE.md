@@ -35,7 +35,8 @@ create that note on the spot.
 Open any note by clicking its row on the Notes screen. At the top you'll find:
 
 - **The title** — click it and type to rename.
-- **Edit / Preview button** — one button toggles between rendered Markdown and raw text.
+- **Formatting buttons** — Bold, Italic, Heading, • List, and [[ link ]] sit above the
+  note body. Select text (or just place the cursor) and tap a button.
 - **Tags field** — comma-separated, e.g. `physics, ideas`.
 - **Save changes** — commits title, tags, and body changes.
 - **Delete** — moves the note to the Dead Stars bin.
@@ -48,7 +49,7 @@ note with unsaved edits, Saturn asks whether to discard them.
 You can delete notes in two places:
 
 - On the Notes screen, click the **Delete** button at the end of a note row.
-- On a note's detail screen, click **Delete** near the View/Edit controls.
+- On a note's detail screen, click **Delete** in the toolbar.
 
 Saturn asks for confirmation before moving a note to the **Dead Stars** bin.
 Deleting a note does not rewrite links in other notes; any `[[links]]` pointing
@@ -61,18 +62,21 @@ Open **Bin** in the sidebar. Deleted notes appear as dead-star rows.
 - **Restore** brings a note back into your active notebook.
 - **Delete forever** permanently removes it from the bin after confirmation.
 
-## Writing in Markdown
+## Writing & formatting
 
-Saturn renders a practical subset of Markdown:
+Notes are always shown styled — what you type is what you see. Use the
+buttons above the note body to format:
 
-| You type | You get |
+| Button | Does |
 |---|---|
-| `# Heading` / `## Sub` / `### Small` | Headings (three levels) |
-| `**bold**` | **bold** |
-| `*italic*` | *italic* |
-| `` `code` `` | inline `code` |
-| `- item` | bullet lists |
-| blank line | paragraph break |
+| **B** | Bold the selected text |
+| *I* | Italicize the selected text |
+| H | Turn the current line into a heading (tap again to undo) |
+| • List | Turn the current line(s) into a bulleted list |
+| [[ link ]] | Turn the selected text into a link to another note (or ask for a title) |
+
+(Under the hood notes are still saved in a portable plain-text format, so
+older notes and anything you paste keep working.)
 
 ## Linking notes — the heart of Saturn
 
