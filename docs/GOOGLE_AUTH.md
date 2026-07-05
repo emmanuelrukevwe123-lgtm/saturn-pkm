@@ -66,6 +66,12 @@ Then visit `http://localhost:8000`.
 
 ## 5. Enable Cloud Sync (Firestore)
 
+> ⚠️ **Currently disabled in the app** (`CLOUD_SYNC_ENABLED = false` in
+> `public/script.js`). The blocker: the `(default)` Firestore database does not
+> exist in project `saturn-1165b` (a database was created but apparently under a
+> custom name or another project). To re-enable: create the **(default)**
+> database per the steps below, publish the rules, then flip the flag to `true`.
+
 Signed-in notes sync across devices through Cloud Firestore. One-time setup:
 
 1. Firebase console → **Build → Firestore Database** → **Create database**.

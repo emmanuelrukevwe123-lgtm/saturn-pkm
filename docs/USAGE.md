@@ -127,12 +127,10 @@ Both features need Google sign-in (and the server AI setup in `AI.md`):
 
 ## Your data
 
-- Signed out: notes are stored only in your browser's **localStorage** under
-  `saturn-pkm-notes` (theme choice under `saturn-pkm-theme`) — nothing leaves
-  your machine.
-- Signed in with Google: notes also **sync to your private Firestore
-  notebook** (`users/<your-uid>/…`, readable only by your account), so they
-  follow you across devices. The browser copy remains the offline cache.
+- Notes are stored in your browser's **localStorage** under `saturn-pkm-notes`
+  (theme choice under `saturn-pkm-theme`); signing in with Google switches to a
+  per-account key on the same device. Notes do **not** sync between devices
+  (cloud sync is planned but currently disabled).
 - Using an AI feature sends the relevant notes to the Gemini API for that
   one request (see `AI.md`).
 - Deleted notes are stored separately under `saturn-pkm-deleted-notes`.

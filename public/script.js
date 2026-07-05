@@ -7,7 +7,11 @@
    Saturn design export's Today / Topics / Progress / Add views.
    ============================================================ */
 
-const APP_VERSION = "v11";
+const APP_VERSION = "v12";
+// Cloud sync is parked: the Firestore (default) database doesn't exist in the
+// project yet. All sync code below stays dormant behind this flag — to bring
+// it back, create the database (docs/GOOGLE_AUTH.md §5) and flip to true.
+const CLOUD_SYNC_ENABLED = false;
 
 // ---------- Visible error reporting ----------
 // If anything throws, show it on screen instead of failing silently —
@@ -871,15 +875,15 @@ function switchNotebookForUser(user) {
     openTag = null;
     searchInput.value = "";
     loadNotes();
-    // Only seed the signed-out notebook — a signed-in user's notes may be
-    // in the cloud, and seeding before the pull would push starter notes up.
-    if (!user) seedIfEmpty();
+    // With sync parked, every notebook seeds locally. (When sync returns:
+    // skip seeding for signed-in users so starter notes don't push up.)
+    if (!user || !CLOUD_SYNC_ENABLED) seedIfEmpty();
     showScreen("home");
   } else {
     renderScreen();
   }
 
-  if (user) {
+  if (user && CLOUD_SYNC_ENABLED) {
     cloudStatus = "off"; // clear a previous account's "unavailable" latch
     pullAndMergeCloud();
   } else {
@@ -906,7 +910,7 @@ function noteTimestamp(n) {
 }
 
 function cloudReady() {
-  return !!(cloudApi && currentUser) && cloudStatus !== "unavailable";
+  return CLOUD_SYNC_ENABLED && !!(cloudApi && currentUser) && cloudStatus !== "unavailable";
 }
 
 function cloudDocRef(kind, id) {
@@ -1069,18 +1073,22 @@ async function initGoogleAuth() {
     const [{ initializeApp }, auth, firestore] = await Promise.all([
       import("https://www.gstatic.com/firebasejs/" + FIREBASE_SDK_VERSION + "/firebase-app.js"),
       import("https://www.gstatic.com/firebasejs/" + FIREBASE_SDK_VERSION + "/firebase-auth.js"),
-      import("https://www.gstatic.com/firebasejs/" + FIREBASE_SDK_VERSION + "/firebase-firestore.js")
+      CLOUD_SYNC_ENABLED
+        ? import("https://www.gstatic.com/firebasejs/" + FIREBASE_SDK_VERSION + "/firebase-firestore.js")
+        : Promise.resolve(null)
     ]);
     const app = initializeApp(config);
     const firebaseAuth = auth.getAuth(app);
-    cloudApi = {
-      db: firestore.getFirestore(app),
-      collection: firestore.collection,
-      doc: firestore.doc,
-      getDocs: firestore.getDocs,
-      setDoc: firestore.setDoc,
-      deleteDoc: firestore.deleteDoc
-    };
+    if (firestore) {
+      cloudApi = {
+        db: firestore.getFirestore(app),
+        collection: firestore.collection,
+        doc: firestore.doc,
+        getDocs: firestore.getDocs,
+        setDoc: firestore.setDoc,
+        deleteDoc: firestore.deleteDoc
+      };
+    }
     const provider = new auth.GoogleAuthProvider();
     authApi = {
       auth: firebaseAuth,

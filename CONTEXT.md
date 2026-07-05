@@ -186,6 +186,16 @@ summaries + "Ask Saturn" Q&A over the user's notes).
   Firestore + publish rules (docs/GOOGLE_AUTH.md §5) — until then the app shows
   "cloud sync not set up".
 
+- **2026-07-05** — **Cloud sync parked** (user decision after setup friction): the Firestore
+  `(default)` database still doesn't exist in `saturn-1165b` (REST probe confirms; the
+  database the user created is presumably named differently or in another project — never
+  resolved). All sync code remains in `script.js` but dormant behind
+  `CLOUD_SYNC_ENABLED = false`: the Firestore SDK isn't even downloaded, sign-in reverts
+  to plain local per-account notebooks with seeding, auth card says "Signed in with
+  Google". Landing/USAGE copy reverted to honest local-only wording; GOOGLE_AUTH.md §5
+  marked disabled with re-enable instructions (create (default) DB → flip flag). v12.
+  Verified: no firestore network request, notes/save flow intact, no console errors.
+
 ## Features shipped
 - Two-pane Saturn-styled UI (monochrome light + dark themes, Baloo 2 + Quicksand, 252px sidebar)
 - **Mobile responsive** — sidebar collapses to a wrapping top bar under 880px
