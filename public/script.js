@@ -1075,6 +1075,41 @@ function seedIfEmpty() {
   save();
 }
 
+// ---------- Sidebar toggle (hamburger) ----------
+// Desktop: the button collapses/restores the sidebar (body.nav-hidden).
+// Mobile: the sidebar is a slide-in drawer (body.nav-open) with a backdrop.
+const menuToggle = $("#menu-toggle");
+const navBackdrop = $("#nav-backdrop");
+const mobileNav = window.matchMedia("(max-width: 880px)");
+
+function navIsOpen() {
+  return mobileNav.matches
+    ? document.body.classList.contains("nav-open")
+    : !document.body.classList.contains("nav-hidden");
+}
+
+function setNav(open) {
+  if (mobileNav.matches) {
+    document.body.classList.toggle("nav-open", open);
+    navBackdrop.hidden = !open;
+  } else {
+    document.body.classList.toggle("nav-hidden", !open);
+    document.body.classList.remove("nav-open");
+    navBackdrop.hidden = true;
+  }
+}
+
+menuToggle.addEventListener("click", () => setNav(!navIsOpen()));
+navBackdrop.addEventListener("click", () => setNav(false));
+
+// Crossing the breakpoint: desktop always starts visible, mobile starts closed
+mobileNav.addEventListener("change", () => setNav(!mobileNav.matches));
+
+// Picking a destination closes the drawer on mobile
+document.querySelector(".sidebar").addEventListener("click", (e) => {
+  if (mobileNav.matches && e.target.closest(".nav-link, .add-nav")) setNav(false);
+});
+
 // ---------- Graph (force-directed map of the knowledge web) ----------
 // Hand-rolled canvas simulation, no libraries: notes repel each other,
 // [[links]] pull their two notes together, everything drifts toward the
@@ -1415,7 +1450,9 @@ askFab.addEventListener("click", () => {
 });
 
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") askPop.hidden = true;
+  if (e.key !== "Escape") return;
+  askPop.hidden = true;
+  if (mobileNav.matches) setNav(false);
 });
 
 askForm.addEventListener("submit", (e) => {
