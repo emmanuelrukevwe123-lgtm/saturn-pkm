@@ -161,6 +161,17 @@ summaries + "Ask Saturn" Q&A over the user's notes).
   card, how-to step, meta description). Note: the per-note "Linked from" panel still exists
   in the app. Verified via Playwright at 1440px/390px, no errors.
 
+- **2026-07-05** — **Markdown hidden from the user** (user request; chose "formatting
+  buttons" over plain-text and keep-markdown options): the note body is one always-styled
+  `contenteditable` surface with a pill toolbar (B / I / H / • List / [[ link ]]) driven by
+  `execCommand`. The Edit/Preview toggle and the textarea are gone. Storage format is
+  UNCHANGED (markdown-ish text): new `domToMarkdown()` DOM walker converts the editor back
+  on every input, which keeps old notes, [[links]]/backlinks, the graph, AI, drafts, and
+  logic tests working, and sanitizes pasted HTML by round-trip. renderMarkdown no longer
+  emits a placeholder `<p>` for empty bodies (editor uses a CSS `:empty::before`
+  placeholder). Verified via Playwright: bold/heading/list/link save→reload round-trips,
+  clean stored text, no false-dirty on reopen.
+
 ## Features shipped
 - Two-pane Saturn-styled UI (monochrome light + dark themes, Baloo 2 + Quicksand, 252px sidebar)
 - **Mobile responsive** — sidebar collapses to a wrapping top bar under 880px
@@ -171,7 +182,7 @@ summaries + "Ask Saturn" Q&A over the user's notes).
 - **Google sign-in** through Firebase Authentication (per-account local notebooks; email never displayed;
   mobile-friendly redirect flow served through our own domain)
 - localStorage persistence (`saturn-pkm-notes`, per-user `saturn-pkm-notes:<uid>` when signed in)
-- Markdown: `# ## ###` headings, `**bold**`, `*italic*`, `` `code` ``, `- lists`, paragraphs
+- Always-styled rich editor with formatting buttons (B / I / H / • List / [[ link ]]) — no visible Markdown; portable text format under the hood
 - `[[Wiki links]]` — clickable; missing targets render dashed, click-to-create
 - Backlinks panel ("Linked from") per note
 - **Graph screen** — force-directed map: notes as stars sized by connections, links as threads,
