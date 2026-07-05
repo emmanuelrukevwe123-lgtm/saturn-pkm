@@ -367,6 +367,7 @@ function wireFormatting() {
   };
   for (const [id, run] of Object.entries(actions)) {
     const btn = $("#" + id);
+    if (!btn) continue; // stale cached HTML must never crash the boot sequence
     btn.addEventListener("mousedown", (e) => e.preventDefault()); // keep selection
     btn.addEventListener("click", () => {
       renderedBody.focus();
@@ -1175,16 +1176,16 @@ function navIsOpen() {
 function setNav(open) {
   if (mobileNav.matches) {
     document.body.classList.toggle("nav-open", open);
-    navBackdrop.hidden = !open;
+    if (navBackdrop) navBackdrop.hidden = !open;
   } else {
     document.body.classList.toggle("nav-hidden", !open);
     document.body.classList.remove("nav-open");
-    navBackdrop.hidden = true;
+    if (navBackdrop) navBackdrop.hidden = true;
   }
 }
 
-menuToggle.addEventListener("click", () => setNav(!navIsOpen()));
-navBackdrop.addEventListener("click", () => setNav(false));
+menuToggle?.addEventListener("click", () => setNav(!navIsOpen()));
+navBackdrop?.addEventListener("click", () => setNav(false));
 
 // Crossing the breakpoint: desktop always starts visible, mobile starts closed
 mobileNav.addEventListener("change", () => setNav(!mobileNav.matches));
@@ -1333,6 +1334,7 @@ function graphLoop() {
 }
 
 function renderGraph() {
+  if (!graphCanvas) return; // stale cached HTML
   const hasEdges = notes.length > 0;
   graphEmpty.hidden = notes.length > 0;
   graphCanvas.parentElement.hidden = !hasEdges;
@@ -1362,7 +1364,7 @@ function graphNodeAt(p) {
   return best;
 }
 
-graphCanvas.addEventListener("pointerdown", (e) => {
+graphCanvas?.addEventListener("pointerdown", (e) => {
   const node = graphNodeAt(graphPoint(e));
   if (!node) return;
   gDrag = node;
@@ -1370,7 +1372,7 @@ graphCanvas.addEventListener("pointerdown", (e) => {
   graphCanvas.setPointerCapture(e.pointerId);
 });
 
-graphCanvas.addEventListener("pointermove", (e) => {
+graphCanvas?.addEventListener("pointermove", (e) => {
   const p = graphPoint(e);
   if (gDrag) {
     gDrag.x = p.x; gDrag.y = p.y;
@@ -1382,7 +1384,7 @@ graphCanvas.addEventListener("pointermove", (e) => {
   graphCanvas.style.cursor = gHot ? "pointer" : "default";
 });
 
-graphCanvas.addEventListener("pointerup", (e) => {
+graphCanvas?.addEventListener("pointerup", (e) => {
   if (!gDrag) return;
   const node = gDrag;
   gDrag = null;
@@ -1391,7 +1393,7 @@ graphCanvas.addEventListener("pointerup", (e) => {
   if (!node.moved) openNote(node.id);
 });
 
-graphCanvas.addEventListener("pointerleave", () => { gHot = null; });
+graphCanvas?.addEventListener("pointerleave", () => { gHot = null; });
 
 window.addEventListener("resize", () => {
   if (screen === "graph") gHeat = Math.max(gHeat, 30);
@@ -1423,6 +1425,7 @@ function aiReady() {
 }
 
 function renderAiAvailability() {
+  if (!aiSummarizeBtn || !askBtn) return; // stale cached HTML — skip, don't crash
   const ready = aiReady();
   const hint = authStatus === "unconfigured"
     ? "Google sign-in isn't set up yet — AI needs it."
@@ -1527,7 +1530,7 @@ aiInsertBtn.addEventListener("click", () => {
 $("#ai-summary-close").addEventListener("click", () => { aiSummaryPanel.hidden = true; });
 $("#ask-close").addEventListener("click", () => { askPanel.hidden = true; });
 
-askFab.addEventListener("click", () => {
+askFab?.addEventListener("click", () => {
   askPop.hidden = !askPop.hidden;
   if (!askPop.hidden && aiReady()) askInput.focus();
 });
