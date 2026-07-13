@@ -11,7 +11,7 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Baloo+2:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Quicksand:wght@400;500;600;700&display=swap"
     rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=12">
+  <link rel="stylesheet" href="style.css?v=13">
 </head>
 
 <body>
@@ -45,6 +45,7 @@
         <button class="nav-link" data-screen="tags">Tags</button>
         <button class="nav-link" data-screen="graph">Graph</button>
         <button class="nav-link" data-screen="progress">Progress</button>
+        <button class="nav-link" data-screen="planner">Planner</button>
         <button class="nav-link" data-screen="bin">Bin</button>
       </nav>
 
@@ -237,6 +238,52 @@
           <div class="empty" id="bin-empty" hidden>No dead stars in the bin.</div>
         </section>
 
+        <!-- PLANNER (project list) -->
+        <section id="screen-planner" hidden>
+          <div class="eyebrow">Boards</div>
+          <h1 class="page-title tight">Planner</h1>
+          <p class="page-sub">Plan your projects on kanban boards. Each project gets its own columns of tasks —
+            drag cards along as work moves forward.</p>
+
+          <div class="project-new">
+            <input id="project-name" class="field" placeholder="Name a new project…" autocomplete="off">
+            <button id="project-create" class="pill pill-save" type="button" disabled>Create</button>
+          </div>
+
+          <div class="ledger" id="project-list"></div>
+          <div class="empty" id="planner-empty" hidden>No boards yet — name your first project above.</div>
+        </section>
+
+        <!-- BOARD (one project's kanban) -->
+        <section id="screen-board" hidden>
+          <button class="back-link" id="board-back">← Projects</button>
+          <div class="eyebrow">Board</div>
+          <input id="board-title" class="title-input" placeholder="Untitled project" autocomplete="off">
+
+          <div class="note-tools">
+            <span class="spacer"></span>
+            <button id="board-delete" class="pill pill-danger" type="button">Delete project</button>
+          </div>
+
+          <div class="kb-board j-scroll" id="kb-board">
+            <div class="kb-col" data-status="todo">
+              <div class="kb-col-head">To do <span class="kb-count"></span></div>
+              <div class="kb-cards j-scroll"></div>
+              <button class="kb-add" data-status="todo" type="button">＋ Add task</button>
+            </div>
+            <div class="kb-col" data-status="doing">
+              <div class="kb-col-head">In progress <span class="kb-count"></span></div>
+              <div class="kb-cards j-scroll"></div>
+              <button class="kb-add" data-status="doing" type="button">＋ Add task</button>
+            </div>
+            <div class="kb-col" data-status="done">
+              <div class="kb-col-head">Done <span class="kb-count"></span></div>
+              <div class="kb-cards j-scroll"></div>
+              <button class="kb-add" data-status="done" type="button">＋ Add task</button>
+            </div>
+          </div>
+        </section>
+
         <!-- ADD -->
         <section id="screen-add" hidden>
           <div class="add-wrap">
@@ -282,8 +329,48 @@
     </div>
   </div>
 
-  <script src="firebase-config.js?v=12"></script>
-  <script src="script.js?v=12"></script>
+  <!-- Task detail: backdrop + panel (bottom sheet on mobile) -->
+  <div id="task-backdrop" class="task-backdrop" hidden></div>
+  <div id="task-pop" class="task-pop" hidden>
+    <div class="list-heading">Task</div>
+
+    <input id="task-title" class="field" placeholder="What needs doing?" autocomplete="off">
+
+    <label class="form-label">Status</label>
+    <div class="pills tight-pills" id="task-status-pills">
+      <button class="pill" data-status="todo" type="button">To do</button>
+      <button class="pill" data-status="doing" type="button">In progress</button>
+      <button class="pill" data-status="done" type="button">Done</button>
+    </div>
+
+    <label class="form-label" for="task-due">Due date</label>
+    <input id="task-due" class="field" type="date">
+
+    <label class="form-label">Priority</label>
+    <div class="pills tight-pills" id="task-prio-pills">
+      <button class="pill" data-prio="low" type="button">Low</button>
+      <button class="pill" data-prio="med" type="button">Medium</button>
+      <button class="pill" data-prio="high" type="button">High</button>
+    </div>
+
+    <label class="form-label" for="task-tags">Tags</label>
+    <input id="task-tags" class="field" placeholder="tags, comma, separated" autocomplete="off">
+
+    <label class="form-label" for="task-notes">Notes</label>
+    <textarea id="task-notes" class="field task-notes"
+      placeholder="Details… link a Saturn note with [[double brackets]]."></textarea>
+    <div id="task-notes-preview" class="rendered task-notes-preview" hidden></div>
+
+    <div class="note-tools task-tools">
+      <button id="task-save" class="pill pill-save" type="button" disabled>Save task</button>
+      <span class="spacer"></span>
+      <button id="task-delete" class="pill pill-danger" type="button">Delete</button>
+      <button id="task-close" class="pill" type="button">Close</button>
+    </div>
+  </div>
+
+  <script src="firebase-config.js?v=13"></script>
+  <script src="script.js?v=13"></script>
 </body>
 
 </html>

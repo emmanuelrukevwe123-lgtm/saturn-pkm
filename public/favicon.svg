@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <style>
-    .planet { fill: #141414; }
-    .ring { stroke: #141414; }
+    .planet { fill: #C2551F; }
+    .ring { stroke: #294540; }
     @media (prefers-color-scheme: dark) {
-      .planet { fill: #EDEDED; }
-      .ring { stroke: #EDEDED; }
+      .planet { fill: #E98B4C; }
+      .ring { stroke: #F2E8D2; }
     }
   </style>
   <circle class="planet" cx="32" cy="32" r="17"/>

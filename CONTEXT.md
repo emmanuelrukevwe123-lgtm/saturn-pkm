@@ -14,12 +14,19 @@ summaries + "Ask Saturn" Q&A over the user's notes).
 - Plan: `pkm-plan.md` (7 phases)
 - Design reference: `Saturn.html` (design-tool export — reference only, never edited).
   It's a bundler export: the real page is JSON-encoded on line 180 (`__bundler/template`).
-- Design language (since 2026-07-02 redesign): **exact clone of the Saturn export as rendered** —
-  monochrome LIGHT/DARK palettes (light: `#EAEAEA` bg / `#141414` accent; dark inverted),
-  Baloo 2 headings (52px page titles, weight 400), Quicksand body, 252px sidebar,
-  980px content column, ring cards, pill filters, ledger rows.
-  (The earlier cream/terracotta look came from the template's *fallback* values, which the
-  rendered design overrides with theme vars.)
+- Design language (since 2026-07-13 retro re-theme, user request): **"Mission Control '72"**
+  — retro-space palette over the Saturn export's layout system. Cream paper (`#F2E8D2`),
+  brown-teal ink (`#294540`), burnt-orange accent (light `#C2551F` / dark `#E98B4C`);
+  dark mode is deep brown-teal (`#152A26`) with cream ink. Signature backgrounds (SVG
+  data-URIs in `--sun`/`--stars` vars, duplicated in style.css + index.html): a slatted
+  retro sun (banded disc, horizontal gaps through its lower half, top-right) in light
+  mode and a hand-scattered cream starfield (900px tile of irregular dots + 4-point
+  sparkles, a few faintly orange) in dark — background-image layers on `.app` (app) /
+  `body` (landing), no JS, no extra elements. Structure is
+  unchanged from the 2026-07-02 Saturn clone: Baloo 2 headings (52px page titles),
+  Quicksand body, 252px sidebar, 980px content column, ring cards, pill filters, ledger
+  rows. Tag chips are teal/orange/brown/olive (`TAG_LIGHT`/`TAG_DARK` in script.js);
+  favicon tinted to match.
 
 ## Files
 | File | Purpose |
@@ -196,6 +203,37 @@ summaries + "Ask Saturn" Q&A over the user's notes).
   marked disabled with re-enable instructions (create (default) DB → flip flag). v12.
   Verified: no firestore network request, notes/save flow intact, no console errors.
 
+- **2026-07-13** — **Planner added** (user request: "Notion-like planning"; chose kanban
+  boards + structured tasks + multiple projects when asked). Two new screens mirroring the
+  home→note pair: **Planner** (project list: create/rename/delete, task-count chips) and
+  **Board** (fixed To do / In progress / Done columns). Tasks: title, status, due date
+  (overdue = accent chip), priority (low/med/high monochrome chips), tags (reuses
+  `tagColor`), and a notes field whose live preview renders `[[wiki links]]` via the
+  shared `renderMarkdown` — clicking navigates to the note (handler extracted to
+  `handleWikiLinkClick`, shared with the note editor). Detail editing in a draft-based
+  modal (`#task-pop`, bottom sheet on mobile) with explicit Save; deletes are simple
+  confirms (project delete cascades; Dead Stars bin untouched). Drag & drop is
+  hand-rolled pointer events from a `.kb-grip` handle only (`touch-action:none` on the
+  grip keeps native scrolling on card bodies), ghost clone + dashed placeholder + edge
+  auto-scroll; `scroll-snap` is suspended during drags (it fought auto-scroll on mobile).
+  Storage: `saturn-pkm-planner-projects` / `-tasks` keys, per-user scoped + migrated on
+  sign-in like notes, normalized on parse, `scheduleCloudPush()` hooks in place for when
+  sync returns. Gotcha found: `riseIn`'s `fill both` ends at `transform:none`, wiping
+  transform-based centering — the modal centers via `inset:0;margin:auto` instead. v13.
+  Verified: `node --check`, 19/19 new logic tests (parse normalization, moveTask
+  renumbering), 55/55 Playwright checks at 1440px + 390px-touch (create/persist/drag/
+  reorder/tap-vs-drag, wiki-link nav, bottom sheet, edge auto-scroll, dark mode, existing
+  screens regression, zero console errors).
+
+- **2026-07-13** — **Retro re-theme** (user request after liking the planner: "brownish
+  teal and orange and cream", stars in dark mode, sun in light mode). All tokens swapped
+  in style.css + index.html (see Design language above); backdrops warmed to teal-tinted;
+  tag palette recolored; favicon tinted. Sun/stars are background-image layers on the
+  already-opaque `.app` / landing `body` — nothing scrolls, nothing intercepts pointers.
+  Ships with the planner as v13. Verified: 55/55 e2e + 19/19 logic checks still pass,
+  zero console errors; screenshots reviewed in both modes for app (home/board/graph)
+  and landing.
+
 ## Features shipped
 - Two-pane Saturn-styled UI (monochrome light + dark themes, Baloo 2 + Quicksand, 252px sidebar)
 - **Mobile responsive** — sidebar collapses to a wrapping top bar under 880px
@@ -216,6 +254,9 @@ summaries + "Ask Saturn" Q&A over the user's notes).
 - **AI (free Gemini)**: ✦ Summarize on each note (streaming panel + "Insert into note") and
   Ask Saturn floating ✦ popover (Q&A over all notes, answers cite [[Note titles]]);
   sign-in-gated, streaming, quota-friendly error messages
+- **Planner** — multiple projects, each a kanban board (To do / In progress / Done);
+  structured tasks (due date, priority, tags, notes with [[links]] to Saturn notes);
+  grip-handle drag & drop on mouse + touch; task detail modal (bottom sheet on mobile)
 - Planet favicon (theme-aware SVG)
 - First-run seed: 2 linked starter notes explaining the app
 

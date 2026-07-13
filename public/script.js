@@ -7,7 +7,7 @@
    Saturn design export's Today / Topics / Progress / Add views.
    ============================================================ */
 
-const APP_VERSION = "v12";
+const APP_VERSION = "v13";
 // Cloud sync is parked: the Firestore (default) database doesn't exist in the
 // project yet. All sync code below stays dormant behind this flag — to bring
 // it back, create the database (docs/GOOGLE_AUTH.md §5) and flip to true.
@@ -36,6 +36,8 @@ window.addEventListener("unhandledrejection", (e) =>
 const STORAGE_KEY = "saturn-pkm-notes";
 const TRASH_KEY = "saturn-pkm-deleted-notes";
 const THEME_KEY = "saturn-pkm-theme";
+const PLANNER_PROJECTS_KEY = "saturn-pkm-planner-projects";
+const PLANNER_TASKS_KEY = "saturn-pkm-planner-tasks";
 const FIREBASE_SDK_VERSION = "12.15.0";
 
 // ---------- State ----------
@@ -55,12 +57,25 @@ let authError = "";
 let authApi = null;
 let noteDraft = null;
 
+// Planner state
+let projects = [];              // {id, name, created, updated}
+let plannerTasks = [];          // flat task list; each task carries projectId
+let plannerProjectsKey = PLANNER_PROJECTS_KEY;
+let plannerTasksKey = PLANNER_TASKS_KEY;
+let activeProjectId = null;     // which board is open
+let taskDetailId = null;        // which task is open in the detail panel
+let taskDraft = null;           // unsaved detail-panel edits
+let kbDrag = null;              // kanban drag state
+
+const TASK_STATUSES = ["todo", "doing", "done"];
+const TASK_PRIORITIES = ["low", "med", "high"];
+
 const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const WD = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
-// Grayscale tag palette from the Saturn design (light / dark values)
-const TAG_LIGHT = ["#2B2B2B", "#555555", "#7A7A7A", "#9E9E9E"];
-const TAG_DARK  = ["#E8E8E8", "#BDBDBD", "#969696", "#707070"];
+// Retro tag palette: teal / orange / brown / olive (light / dark values)
+const TAG_LIGHT = ["#2F5D54", "#C2551F", "#7A5230", "#6B7A3A"];
+const TAG_DARK  = ["#8FD0C2", "#EFA067", "#D9B48A", "#C2CC8B"];
 
 // ---------- Elements ----------
 const $ = (sel) => document.querySelector(sel);
@@ -73,6 +88,8 @@ const screens = {
   progress: $("#screen-progress"),
   bin: $("#screen-bin"),
   add: $("#screen-add"),
+  planner: $("#screen-planner"),
+  board: $("#screen-board"),
 };
 
 const ledgerEl     = $("#ledger");
@@ -133,9 +150,61 @@ function userDeletedStorageKey(user) {
   return scopedStorageKey(TRASH_KEY, user);
 }
 
+// Planner rows are normalized like notes: bad data must never crash rendering.
+function parseStoredProjects(raw) {
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((p) => p && typeof p === "object" && p.id != null)
+      .map((p) => ({
+        ...p,
+        name: typeof p.name === "string" ? p.name : "Untitled project",
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function parseStoredTasks(raw) {
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((t) => t && typeof t === "object" && t.id != null && t.projectId != null)
+      .map((t) => ({
+        ...t,
+        title: typeof t.title === "string" ? t.title : "Untitled task",
+        status: TASK_STATUSES.includes(t.status) ? t.status : "todo",
+        due: typeof t.due === "string" ? t.due : "",
+        priority: TASK_PRIORITIES.includes(t.priority) ? t.priority : "med",
+        tags: Array.isArray(t.tags) ? t.tags.filter((x) => typeof x === "string") : [],
+        notes: typeof t.notes === "string" ? t.notes : "",
+        order: typeof t.order === "number" ? t.order : 0,
+      }));
+  } catch {
+    return [];
+  }
+}
+
 function save() {
   localStorage.setItem(storageKey, JSON.stringify(notes));
   scheduleCloudPush();
+}
+
+function saveProjects() {
+  localStorage.setItem(plannerProjectsKey, JSON.stringify(projects));
+  scheduleCloudPush(); // no-op while cloud sync is parked; hook for later
+}
+
+function saveTasks() {
+  localStorage.setItem(plannerTasksKey, JSON.stringify(plannerTasks));
+  scheduleCloudPush();
+}
+
+function loadPlanner() {
+  projects = parseStoredProjects(localStorage.getItem(plannerProjectsKey));
+  plannerTasks = parseStoredTasks(localStorage.getItem(plannerTasksKey));
 }
 
 function saveDeleted() {
@@ -150,6 +219,7 @@ function loadNotes() {
 
 function load() {
   loadNotes();
+  loadPlanner();
   dark = localStorage.getItem(THEME_KEY) === "dark";
 }
 
@@ -472,8 +542,9 @@ function showScreen(name) {
   // list lands mid-page on the next screen and looks like nothing opened.
   document.querySelector(".main").scrollTop = 0;
   document.querySelectorAll(".nav-link").forEach((b) =>
-    // the note screen still belongs to "Notes" in the nav
-    b.classList.toggle("active", b.dataset.screen === (name === "note" ? "home" : name))
+    // the note screen still belongs to "Notes" in the nav; a board to "Planner"
+    b.classList.toggle("active",
+      b.dataset.screen === (name === "note" ? "home" : name === "board" ? "planner" : name))
   );
   renderScreen();
   return true;
@@ -487,6 +558,8 @@ function renderScreen() {
     else if (screen === "graph") renderGraph();
     else if (screen === "progress") renderProgress();
     else if (screen === "bin") renderBin();
+    else if (screen === "planner") renderPlanner();
+    else if (screen === "board") renderBoard();
   } catch (err) {
     reportAppError((err && err.message) || String(err));
     throw err;
@@ -856,25 +929,45 @@ function copyLocalDeletedToUserStore(userKey) {
   if (localDeleted.length) localStorage.setItem(userKey, JSON.stringify(localDeleted));
 }
 
+function copyLocalPlannerToUserStore(projectsKey, tasksKey) {
+  if (!localStorage.getItem(projectsKey)) {
+    const localProjects = parseStoredProjects(localStorage.getItem(PLANNER_PROJECTS_KEY));
+    if (localProjects.length) localStorage.setItem(projectsKey, JSON.stringify(localProjects));
+  }
+  if (!localStorage.getItem(tasksKey)) {
+    const localTasks = parseStoredTasks(localStorage.getItem(PLANNER_TASKS_KEY));
+    if (localTasks.length) localStorage.setItem(tasksKey, JSON.stringify(localTasks));
+  }
+}
+
 function switchNotebookForUser(user) {
   currentUser = user;
   const nextKey = userStorageKey(user);
   const nextDeletedKey = userDeletedStorageKey(user);
+  const nextProjectsKey = scopedStorageKey(PLANNER_PROJECTS_KEY, user);
+  const nextTasksKey = scopedStorageKey(PLANNER_TASKS_KEY, user);
   if (user) {
     copyLocalNotesToUserStore(nextKey);
     copyLocalDeletedToUserStore(nextDeletedKey);
+    copyLocalPlannerToUserStore(nextProjectsKey, nextTasksKey);
   }
 
   if (nextKey !== storageKey || nextDeletedKey !== deletedStorageKey) {
     storageKey = nextKey;
     deletedStorageKey = nextDeletedKey;
+    plannerProjectsKey = nextProjectsKey;
+    plannerTasksKey = nextTasksKey;
     selectedId = null;
     noteDraft = null;
     activeTag = null;
     searchQuery = "";
     openTag = null;
+    activeProjectId = null;
+    taskDetailId = null;
+    taskDraft = null;
     searchInput.value = "";
     loadNotes();
+    loadPlanner();
     // With sync parked, every notebook seeds locally. (When sync returns:
     // skip seeding for signed-in users so starter notes don't push up.)
     if (!user || !CLOUD_SYNC_ENABLED) seedIfEmpty();
@@ -1331,17 +1424,24 @@ renderedBody.addEventListener("input", () => {
   updateSaveState();
 });
 
-// Wiki links inside rendered markdown: open or create the target note
-renderedBody.addEventListener("click", (e) => {
-  const link = e.target.closest(".wiki-link");
-  if (!link) return;
+// Wiki links inside rendered markdown: open or create the target note.
+// Shared by the note editor and the planner's task-notes preview.
+function handleWikiLinkClick(link) {
   const target = findByTitle(link.dataset.link);
-  if (target) openNote(target.id);
-  else if (confirm(`No note called “${link.dataset.link}” yet. Create it?`)) {
+  if (target) {
+    if (!closeTaskDetail()) return;
+    openNote(target.id);
+  } else if (confirm(`No note called “${link.dataset.link}” yet. Create it?`)) {
     if (!confirmDiscardDraft()) return;
+    if (!closeTaskDetail()) return;
     createNote({ title: link.dataset.link });
     openNote(selectedId, "edit");
   }
+}
+
+renderedBody.addEventListener("click", (e) => {
+  const link = e.target.closest(".wiki-link");
+  if (link) handleWikiLinkClick(link);
 });
 
 // Backlinks: open on click
@@ -1386,6 +1486,534 @@ $("#add-save").addEventListener("click", () => {
   const tags = $("#add-tags").value.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean);
   createNote({ title, tags, body: $("#add-body").value });
   openNote(selectedId, "view");
+});
+
+// ---------- Planner (projects + kanban boards) ----------
+const projectNameInput = $("#project-name");
+const projectCreateBtn = $("#project-create");
+const projectListEl = $("#project-list");
+const plannerEmpty = $("#planner-empty");
+const boardTitleInput = $("#board-title");
+const kbBoard = $("#kb-board");
+const taskBackdrop = $("#task-backdrop");
+const taskPop = $("#task-pop");
+const taskTitleInput = $("#task-title");
+const taskDueInput = $("#task-due");
+const taskTagsInput = $("#task-tags");
+const taskNotesInput = $("#task-notes");
+const taskNotesPreview = $("#task-notes-preview");
+const taskSaveBtn = $("#task-save");
+
+function getProject(id) {
+  return projects.find((p) => p.id === id);
+}
+
+function getTask(id) {
+  return plannerTasks.find((t) => t.id === id);
+}
+
+function tasksFor(projectId, status) {
+  return plannerTasks
+    .filter((t) => t.projectId === projectId && t.status === status)
+    .sort((a, b) => a.order - b.order);
+}
+
+function createProject(name) {
+  const now = new Date().toISOString();
+  const project = { id: Date.now(), name, created: now, updated: now };
+  projects.push(project);
+  saveProjects();
+  return project;
+}
+
+function renameProject(id, name) {
+  const project = getProject(id);
+  if (!project) return;
+  project.name = name;
+  project.updated = new Date().toISOString();
+  saveProjects();
+}
+
+function deleteProject(id) {
+  const project = getProject(id);
+  if (!project) return;
+  const count = plannerTasks.filter((t) => t.projectId === id).length;
+  const label = count === 1 ? "its 1 task" : `its ${count} tasks`;
+  if (!confirm(`Delete “${project.name || "Untitled project"}” and ${label}? This can't be undone.`)) return;
+  projects = projects.filter((p) => p.id !== id);
+  plannerTasks = plannerTasks.filter((t) => t.projectId !== id);
+  saveProjects();
+  saveTasks();
+  if (screen === "board" && activeProjectId === id) showScreen("planner");
+  else renderScreen();
+}
+
+function openBoard(projectId) {
+  activeProjectId = projectId;
+  showScreen("board");
+}
+
+function createTask(projectId, status, title) {
+  const now = new Date().toISOString();
+  const task = {
+    id: Date.now(), projectId, title, status,
+    due: "", priority: "med", tags: [], notes: "",
+    order: tasksFor(projectId, status).length,
+    created: now, updated: now,
+  };
+  plannerTasks.push(task);
+  saveTasks();
+  return task;
+}
+
+function updateTask(id, patch) {
+  const task = getTask(id);
+  if (!task) return;
+  Object.assign(task, patch, { updated: new Date().toISOString() });
+  saveTasks();
+}
+
+function deleteTask(id) {
+  const task = getTask(id);
+  if (!task) return false;
+  if (!confirm(`Delete “${task.title || "Untitled task"}”? This can't be undone.`)) return false;
+  plannerTasks = plannerTasks.filter((t) => t.id !== id);
+  saveTasks();
+  return true;
+}
+
+// Move a task to `status` at position `index`, renumbering both columns
+function moveTask(id, status, index) {
+  const task = getTask(id);
+  if (!task) return;
+  const fromStatus = task.status;
+  const target = tasksFor(task.projectId, status).filter((t) => t.id !== id);
+  target.splice(Math.max(0, Math.min(index, target.length)), 0, task);
+  task.status = status;
+  task.updated = new Date().toISOString();
+  target.forEach((t, i) => { t.order = i; });
+  if (fromStatus !== status) tasksFor(task.projectId, fromStatus).forEach((t, i) => { t.order = i; });
+  saveTasks();
+}
+
+// --- Planner rendering ---
+function projectRow(project, index) {
+  const row = document.createElement("div");
+  row.className = "row";
+  row.dataset.id = project.id;
+
+  const idx = document.createElement("div");
+  idx.className = "row-index";
+  idx.textContent = String(index + 1).padStart(2, "0");
+  row.appendChild(idx);
+
+  const title = document.createElement("div");
+  title.className = "row-title";
+  title.textContent = project.name || "Untitled project";
+  row.appendChild(title);
+
+  const count = plannerTasks.filter((t) => t.projectId === project.id).length;
+  const chip = document.createElement("span");
+  chip.className = "chip chip-muted";
+  chip.textContent = count === 1 ? "1 task" : count + " tasks";
+  row.appendChild(chip);
+
+  const x = document.createElement("button");
+  x.className = "row-delete";
+  x.type = "button";
+  x.title = "Delete project";
+  x.setAttribute("aria-label", "Delete " + (project.name || "Untitled project"));
+  x.textContent = "Delete";
+  x.dataset.del = project.id;
+  row.appendChild(x);
+  return row;
+}
+
+function renderPlanner() {
+  projectListEl.innerHTML = "";
+  const list = [...projects].sort((a, b) => (b.updated || "").localeCompare(a.updated || ""));
+  list.forEach((p, i) => projectListEl.appendChild(projectRow(p, i)));
+  plannerEmpty.hidden = list.length > 0;
+}
+
+function dueLabel(due) {
+  const d = new Date(due + "T00:00:00");
+  return MON[d.getMonth()] + " " + d.getDate();
+}
+
+function isOverdue(task) {
+  if (!task.due || task.status === "done") return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return new Date(task.due + "T00:00:00") < today;
+}
+
+function taskCard(task) {
+  const card = document.createElement("div");
+  card.className = "kb-card";
+  card.dataset.id = task.id;
+
+  const grip = document.createElement("span");
+  grip.className = "kb-grip";
+  grip.textContent = "⠿";
+  grip.title = "Drag to move";
+  card.appendChild(grip);
+
+  const body = document.createElement("div");
+  body.className = "kb-card-body";
+
+  const title = document.createElement("div");
+  title.className = "kb-card-title";
+  title.textContent = task.title || "Untitled task";
+  body.appendChild(title);
+
+  const meta = document.createElement("div");
+  meta.className = "kb-meta";
+  if (task.due) {
+    const due = document.createElement("span");
+    due.className = "chip kb-due" + (isOverdue(task) ? " overdue" : "");
+    due.textContent = dueLabel(task.due);
+    meta.appendChild(due);
+  }
+  const prio = document.createElement("span");
+  prio.className = "chip kb-prio prio-" + task.priority;
+  prio.textContent = task.priority === "med" ? "medium" : task.priority;
+  meta.appendChild(prio);
+  for (const tag of task.tags.slice(0, 2)) meta.appendChild(chipFor(tag));
+  body.appendChild(meta);
+
+  card.appendChild(body);
+  return card;
+}
+
+function renderBoard() {
+  const project = getProject(activeProjectId);
+  if (!project) { showScreen("planner"); return; }
+  if (document.activeElement !== boardTitleInput) boardTitleInput.value = project.name;
+  for (const col of kbBoard.querySelectorAll(".kb-col")) {
+    const status = col.dataset.status;
+    const cardsEl = col.querySelector(".kb-cards");
+    cardsEl.innerHTML = "";
+    const list = tasksFor(project.id, status);
+    for (const task of list) cardsEl.appendChild(taskCard(task));
+    col.querySelector(".kb-count").textContent = list.length ? String(list.length) : "";
+  }
+}
+
+// --- Task detail panel (draft-based, explicit Save) ---
+function taskDraftFrom(task) {
+  return {
+    id: task.id, title: task.title, status: task.status, due: task.due,
+    priority: task.priority, tagsText: task.tags.join(", "), notes: task.notes,
+  };
+}
+
+function taskDraftIsDirty() {
+  const task = getTask(taskDetailId);
+  if (!task || !taskDraft) return false;
+  return taskDraft.title !== task.title ||
+    taskDraft.status !== task.status ||
+    taskDraft.due !== task.due ||
+    taskDraft.priority !== task.priority ||
+    taskDraft.notes !== task.notes ||
+    !arraysEqual(normalizeTagsText(taskDraft.tagsText), task.tags);
+}
+
+function updateTaskSaveState() {
+  taskSaveBtn.disabled = !taskDraftIsDirty();
+}
+
+function renderTaskNotesPreview() {
+  const text = (taskDraft?.notes || "").trim();
+  taskNotesPreview.hidden = !text;
+  taskNotesPreview.innerHTML = text ? renderMarkdown(taskDraft.notes) : "";
+}
+
+function renderTaskDetail() {
+  taskTitleInput.value = taskDraft.title;
+  taskDueInput.value = taskDraft.due;
+  taskTagsInput.value = taskDraft.tagsText;
+  taskNotesInput.value = taskDraft.notes;
+  for (const pill of $("#task-status-pills").querySelectorAll(".pill"))
+    pill.classList.toggle("active", pill.dataset.status === taskDraft.status);
+  for (const pill of $("#task-prio-pills").querySelectorAll(".pill"))
+    pill.classList.toggle("active", pill.dataset.prio === taskDraft.priority);
+  renderTaskNotesPreview();
+  updateTaskSaveState();
+}
+
+function openTaskDetail(id) {
+  const task = getTask(id);
+  if (!task) return;
+  taskDetailId = id;
+  taskDraft = taskDraftFrom(task);
+  renderTaskDetail();
+  taskBackdrop.hidden = false;
+  taskPop.hidden = false;
+  taskTitleInput.focus();
+}
+
+// Returns false if the user kept unsaved changes (so callers can bail out)
+function closeTaskDetail() {
+  if (taskDetailId == null) return true;
+  if (taskDraftIsDirty() && !confirm("Discard unsaved changes?")) return false;
+  taskDetailId = null;
+  taskDraft = null;
+  taskBackdrop.hidden = true;
+  taskPop.hidden = true;
+  return true;
+}
+
+function saveTaskDraft() {
+  const task = getTask(taskDetailId);
+  if (!task || !taskDraft) return;
+  const patch = {
+    title: taskDraft.title.trim() || "Untitled task",
+    status: taskDraft.status,
+    due: taskDraft.due,
+    priority: taskDraft.priority,
+    tags: normalizeTagsText(taskDraft.tagsText),
+    notes: taskDraft.notes,
+  };
+  // A status change re-files the card at the end of its new column
+  if (patch.status !== task.status) patch.order = tasksFor(task.projectId, patch.status).length;
+  updateTask(taskDetailId, patch);
+  taskDraft = taskDraftFrom(getTask(taskDetailId));
+  updateTaskSaveState();
+  if (screen === "board") renderBoard();
+}
+
+// --- Planner events ---
+projectNameInput.addEventListener("input", () => {
+  projectCreateBtn.disabled = projectNameInput.value.trim().length === 0;
+});
+
+function createProjectFromInput() {
+  const name = projectNameInput.value.trim();
+  if (!name) return;
+  const project = createProject(name);
+  projectNameInput.value = "";
+  projectCreateBtn.disabled = true;
+  openBoard(project.id);
+}
+
+projectCreateBtn.addEventListener("click", createProjectFromInput);
+projectNameInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") createProjectFromInput();
+});
+
+projectListEl.addEventListener("click", (e) => {
+  const del = e.target.closest("[data-del]");
+  if (del) { deleteProject(Number(del.dataset.del)); return; }
+  const row = e.target.closest(".row");
+  if (row) openBoard(Number(row.dataset.id));
+});
+
+$("#board-back").addEventListener("click", () => showScreen("planner"));
+$("#board-delete").addEventListener("click", () => deleteProject(activeProjectId));
+boardTitleInput.addEventListener("input", () => renameProject(activeProjectId, boardTitleInput.value));
+
+// "+ Add task" swaps to an inline field: Enter creates, Esc cancels, blur commits
+function startInlineAdd(btn) {
+  if (btn.hidden) return;
+  btn.hidden = true;
+  const input = document.createElement("input");
+  input.className = "field kb-add-field";
+  input.placeholder = "Task title…";
+  input.autocomplete = "off";
+  btn.parentElement.insertBefore(input, btn);
+  input.focus();
+  let done = false;
+  const finish = (commit) => {
+    if (done) return;
+    done = true;
+    const title = input.value.trim();
+    input.remove();
+    btn.hidden = false;
+    if (commit && title) {
+      createTask(activeProjectId, btn.dataset.status, title);
+      renderBoard();
+    }
+  };
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") finish(true);
+    else if (e.key === "Escape") { e.stopPropagation(); finish(false); }
+  });
+  input.addEventListener("blur", () => finish(true));
+}
+
+kbBoard.addEventListener("click", (e) => {
+  const add = e.target.closest(".kb-add");
+  if (add) { startInlineAdd(add); return; }
+  // Tap/click on a card body opens the detail panel (the grip is drag-only —
+  // its taps are handled in pointerup so a drag never doubles as a click)
+  if (e.target.closest(".kb-grip")) return;
+  const card = e.target.closest(".kb-card");
+  if (card) openTaskDetail(Number(card.dataset.id));
+});
+
+// Task detail events
+taskTitleInput.addEventListener("input", () => {
+  if (!taskDraft) return;
+  taskDraft.title = taskTitleInput.value;
+  updateTaskSaveState();
+});
+taskDueInput.addEventListener("input", () => {
+  if (!taskDraft) return;
+  taskDraft.due = taskDueInput.value;
+  updateTaskSaveState();
+});
+taskTagsInput.addEventListener("input", () => {
+  if (!taskDraft) return;
+  taskDraft.tagsText = taskTagsInput.value;
+  updateTaskSaveState();
+});
+taskNotesInput.addEventListener("input", () => {
+  if (!taskDraft) return;
+  taskDraft.notes = taskNotesInput.value;
+  renderTaskNotesPreview();
+  updateTaskSaveState();
+});
+$("#task-status-pills").addEventListener("click", (e) => {
+  const pill = e.target.closest(".pill");
+  if (!pill || !taskDraft) return;
+  taskDraft.status = pill.dataset.status;
+  renderTaskDetail();
+});
+$("#task-prio-pills").addEventListener("click", (e) => {
+  const pill = e.target.closest(".pill");
+  if (!pill || !taskDraft) return;
+  taskDraft.priority = pill.dataset.prio;
+  renderTaskDetail();
+});
+taskSaveBtn.addEventListener("click", saveTaskDraft);
+$("#task-close").addEventListener("click", closeTaskDetail);
+taskBackdrop.addEventListener("click", closeTaskDetail);
+$("#task-delete").addEventListener("click", () => {
+  if (!deleteTask(taskDetailId)) return;
+  taskDetailId = null;
+  taskDraft = null;
+  taskBackdrop.hidden = true;
+  taskPop.hidden = true;
+  if (screen === "board") renderBoard();
+});
+taskNotesPreview.addEventListener("click", (e) => {
+  const link = e.target.closest(".wiki-link");
+  if (link) handleWikiLinkClick(link);
+});
+
+// --- Drag & drop (pointer events, same tap-vs-drag pattern as the graph) ---
+// Drags start only from the grip so card bodies keep native touch scrolling.
+let kbPlaceholder = null;
+
+function kbStartGhost(e) {
+  const rect = kbDrag.card.getBoundingClientRect();
+  const ghost = kbDrag.card.cloneNode(true);
+  ghost.classList.add("kb-ghost");
+  ghost.style.width = rect.width + "px";
+  document.body.appendChild(ghost);
+  kbDrag.ghost = ghost;
+  kbDrag.offsetX = e.clientX - rect.left;
+  kbDrag.offsetY = e.clientY - rect.top;
+  kbDrag.card.classList.add("kb-lift");
+  kbBoard.classList.add("kb-dragging"); // suspend scroll-snap so auto-scroll can move freely
+  kbPlaceholder = document.createElement("div");
+  kbPlaceholder.className = "kb-placeholder";
+  kbPlaceholder.style.height = rect.height + "px";
+}
+
+function kbPlacePlaceholder(e) {
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  const col = el && el.closest(".kb-col");
+  if (!col) return;
+  const cardsEl = col.querySelector(".kb-cards");
+  let before = null;
+  for (const c of cardsEl.querySelectorAll(".kb-card")) {
+    if (c === kbDrag.card) continue;
+    const r = c.getBoundingClientRect();
+    if (e.clientY < r.top + r.height / 2) { before = c; break; }
+  }
+  cardsEl.insertBefore(kbPlaceholder, before);
+}
+
+// Nudge the board/column when dragging near an edge (vital on mobile,
+// where only one column fits on screen)
+function kbAutoScroll(e) {
+  const edge = 48, step = 12;
+  const br = kbBoard.getBoundingClientRect();
+  if (e.clientX < br.left + edge) kbBoard.scrollLeft -= step;
+  else if (e.clientX > br.right - edge) kbBoard.scrollLeft += step;
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  const cardsEl = el && el.closest(".kb-cards");
+  if (cardsEl) {
+    const cr = cardsEl.getBoundingClientRect();
+    if (e.clientY < cr.top + edge) cardsEl.scrollTop -= step;
+    else if (e.clientY > cr.bottom - edge) cardsEl.scrollTop += step;
+  }
+}
+
+function kbEndDrag(drag) {
+  drag.ghost?.remove();
+  kbPlaceholder?.remove();
+  kbPlaceholder = null;
+  drag.card.classList.remove("kb-lift");
+  kbBoard.classList.remove("kb-dragging");
+}
+
+kbBoard.addEventListener("pointerdown", (e) => {
+  const grip = e.target.closest(".kb-grip");
+  if (!grip) return;
+  const card = grip.closest(".kb-card");
+  if (!card) return;
+  kbDrag = {
+    id: Number(card.dataset.id), card,
+    startX: e.clientX, startY: e.clientY, moved: false, ghost: null,
+  };
+  // Capture keeps the drag alive when the pointer leaves the grip; the
+  // delegated handlers below still work if capture isn't available.
+  try { grip.setPointerCapture(e.pointerId); } catch { /* no active pointer */ }
+  e.preventDefault();
+});
+
+kbBoard.addEventListener("pointermove", (e) => {
+  if (!kbDrag) return;
+  if (!kbDrag.moved) {
+    // a still-press stays a tap
+    if (Math.hypot(e.clientX - kbDrag.startX, e.clientY - kbDrag.startY) < 6) return;
+    kbDrag.moved = true;
+    kbStartGhost(e);
+  }
+  kbDrag.ghost.style.left = (e.clientX - kbDrag.offsetX) + "px";
+  kbDrag.ghost.style.top = (e.clientY - kbDrag.offsetY) + "px";
+  kbPlacePlaceholder(e);
+  kbAutoScroll(e);
+});
+
+kbBoard.addEventListener("pointerup", (e) => {
+  if (!kbDrag) return;
+  const drag = kbDrag;
+  kbDrag = null;
+  if (!drag.moved) { openTaskDetail(drag.id); return; }
+  const cardsEl = kbPlaceholder?.parentElement;
+  if (cardsEl) {
+    const status = cardsEl.closest(".kb-col").dataset.status;
+    let index = 0;
+    for (const child of cardsEl.children) {
+      if (child === kbPlaceholder) break;
+      if (child.classList.contains("kb-card") && child !== drag.card) index += 1;
+    }
+    moveTask(drag.id, status, index);
+  }
+  kbEndDrag(drag);
+  renderBoard();
+});
+
+kbBoard.addEventListener("pointercancel", () => {
+  if (!kbDrag) return;
+  const drag = kbDrag;
+  kbDrag = null;
+  kbEndDrag(drag);
+  renderBoard();
 });
 
 // ---------- First run: a tiny linked starter web ----------
@@ -1777,6 +2405,7 @@ askFab?.addEventListener("click", () => {
 
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
+  if (!taskPop.hidden) { closeTaskDetail(); return; }
   askPop.hidden = true;
   if (mobileNav.matches) setNav(false);
 });
