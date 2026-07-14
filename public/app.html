@@ -11,7 +11,7 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Baloo+2:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Quicksand:wght@400;500;600;700&display=swap"
     rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=14">
+  <link rel="stylesheet" href="style.css?v=15">
 </head>
 
 <body>
@@ -47,6 +47,7 @@
         <button class="nav-link" data-screen="progress">Progress</button>
         <button class="nav-link" data-screen="planner">Planner</button>
         <button class="nav-link" data-screen="bin">Bin</button>
+        <button class="nav-link" data-screen="data">Data &amp; Sync</button>
       </nav>
 
       <div class="divider"></div>
@@ -155,6 +156,7 @@
           <span id="img-size-label" class="img-size-label" hidden></span>
 
           <div id="rendered-body" class="note-card rendered rich-editor" contenteditable="true"
+            role="textbox" aria-multiline="true" aria-label="Note body"
             data-placeholder="Start writing… use the buttons above to format, and [[ link ]] to connect notes."></div>
 
           <div id="ai-summary" class="ai-panel" hidden>
@@ -189,7 +191,11 @@
           <p class="page-sub">Every note is a star and every [[link]] is a thread between them. Drag the stars
             around, or tap one to open that note.</p>
           <div class="graph-card">
-            <canvas id="graph-canvas"></canvas>
+            <canvas id="graph-canvas" aria-hidden="true"></canvas>
+          </div>
+          <div class="graph-alternative" aria-label="Textual note connections">
+            <div class="list-heading">Connections</div>
+            <ul id="graph-text"></ul>
           </div>
           <div class="empty" id="graph-empty" hidden>Nothing to map yet — connect two notes with [[double brackets]].</div>
         </section>
@@ -265,6 +271,34 @@
 
           <div class="ledger" id="project-list"></div>
           <div class="empty" id="planner-empty" hidden>No boards yet — name your first project above.</div>
+        </section>
+
+        <!-- DATA & SYNC -->
+        <section id="screen-data" hidden>
+          <div class="eyebrow">Safety first</div>
+          <h1 class="page-title tight">Data &amp; Sync</h1>
+          <p class="page-sub">Download a complete, portable backup or restore one after Saturn validates it.</p>
+          <div id="storage-state" class="sync-state" role="status">Local data ready.</div>
+          <div class="panel-card data-panel">
+            <h2 class="list-heading">Full backup</h2>
+            <p>Includes notes, bin, projects, tasks, settings, and every referenced image.</p>
+            <button id="data-export" class="pill pill-save" type="button">Export .saturn backup</button>
+          </div>
+          <div class="panel-card data-panel">
+            <h2 class="list-heading">Restore backup</h2>
+            <input id="data-import-file" class="field" type="file" accept=".saturn,application/json">
+            <fieldset class="import-mode">
+              <legend>Import mode</legend>
+              <label><input type="radio" name="import-mode" value="merge" checked> Merge with this notebook</label>
+              <label><input type="radio" name="import-mode" value="replace"> Replace this notebook</label>
+            </fieldset>
+            <div id="import-summary" class="sync-state" role="status" hidden></div>
+            <button id="data-import" class="pill pill-save" type="button" disabled>Validate and import</button>
+          </div>
+          <div class="panel-card data-panel">
+            <h2 class="list-heading">Cloud sync</h2>
+            <p id="sync-detail">Local-only. Cloud sync can be enabled per deployment after Firebase rules and indexes are deployed.</p>
+          </div>
         </section>
 
         <!-- BOARD (one project's kanban) -->
@@ -344,8 +378,8 @@
 
   <!-- Task detail: backdrop + panel (bottom sheet on mobile) -->
   <div id="task-backdrop" class="task-backdrop" hidden></div>
-  <div id="task-pop" class="task-pop" hidden>
-    <div class="list-heading">Task</div>
+  <div id="task-pop" class="task-pop" role="dialog" aria-modal="true" aria-labelledby="task-dialog-title" hidden>
+    <div class="list-heading" id="task-dialog-title">Task</div>
 
     <input id="task-title" class="field" placeholder="What needs doing?" autocomplete="off">
 
@@ -382,8 +416,8 @@
     </div>
   </div>
 
-  <script src="firebase-config.js?v=14"></script>
-  <script src="script.js?v=14"></script>
+  <script src="firebase-config.js?v=15"></script>
+  <script type="module" src="script.js?v=15"></script>
 </body>
 
 </html>

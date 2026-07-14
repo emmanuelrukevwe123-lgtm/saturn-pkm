@@ -1,8 +1,12 @@
 # Codex Context - Saturn PKM
 
+## v15 hardening map
+
+Browser integration is `public/script.js`; reusable contracts live in `public/modules/`. Persistence schema v2 is local-first and transactional, backups use the versioned `.saturn` envelope, and images remain in IndexedDB with optional owner-scoped Storage replication. Cloud records carry revisions, base revisions, device IDs, server timestamps, and tombstones behind `SATURN_FEATURES.cloudSync`. Run `npm run check` plus `npm run test:rules` before deployment.
+
 ## Current Understanding
 
-Saturn is a static, local-first personal knowledge management app. It is built with plain HTML, CSS, and JavaScript, with no framework, package manager, build step, or backend.
+Saturn is a local-first personal knowledge management app built with plain HTML, CSS, and JavaScript modules. Vite is development-only; a Vercel function provides the authenticated AI boundary, and optional Firebase sync is feature-flagged.
 
 The app lets a user create Markdown notes, connect them with `[[Note title]]` links, view backlinks, organize by tags, search notes, recover deleted notes from a Dead Stars bin, and track how connected the note collection is.
 

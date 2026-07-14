@@ -1,5 +1,9 @@
 # AI Features (Summarize + Ask Saturn)
 
+The server accepts AI requests only from Firebase tokens with a verified email listed in `AI_ALLOWED_EMAILS`. Upstash Redis enforces 10 requests per 10 minutes and 100 per day per user. Requests have bounded note counts and field sizes and a 30-second upstream timeout; note contents are never logged.
+
+Required server variables are `GEMINI_API_KEY`, `FIREBASE_PROJECT_ID`, `AI_ALLOWED_EMAILS`, `UPSTASH_REDIS_REST_URL`, and `UPSTASH_REDIS_REST_TOKEN`. Separate allowed emails with commas.
+
 Saturn has two AI features, powered by Google's **Gemini** free tier:
 
 - **✦ Summarize** — on any note's toolbar. Streams a Markdown summary into a

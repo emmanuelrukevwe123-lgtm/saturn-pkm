@@ -3,12 +3,12 @@
 **Live at https://saturn-pkm.vercel.app**
 
 A **personal knowledge management** app (Zettelkasten-style linked notes) built with
-plain HTML, CSS, and JavaScript — no frameworks, no build step, no server.
+plain HTML, CSS, and JavaScript modules, with a small authenticated serverless AI endpoint.
 Notes link to each other with `[[Note title]]`, show backlinks automatically,
 render as a live **Graph**, and can hold **images** (compressed, stored in
 IndexedDB, resizable by dragging). A **Planner** adds kanban project boards
 with drag-and-drop tasks that link back to notes. Deleted notes rest in a
-recoverable Dead Stars bin. Everything is stored in your browser.
+recoverable Dead Stars bin. Data is local-first; portable `.saturn` backups include records and images, and optional owner-only Firebase sync ships behind a feature flag.
 
 The UI is the Saturn design export's layout (`design/Saturn.html`) in a retro
 **"Mission Control '72"** palette — cream paper, brown-teal ink, burnt-orange
@@ -22,8 +22,9 @@ Quicksand type, progress rings, ledger-style lists.
 │   ├── index.html            Landing page (what the app is + how to use it)
 │   ├── app.html              The app itself (served at /app)
 │   ├── firebase-config.js    Firebase config for Google sign-in
+│   ├── modules/             Persistence, backup, sync, and domain logic
 │   ├── style.css
-│   └── script.js
+│   └── script.js            Browser UI integration
 ├── api/
 │   └── ai.js                 Vercel serverless function — Gemini AI proxy
 ├── docs/
@@ -36,18 +37,20 @@ Quicksand type, progress rings, ledger-style lists.
 ├── design/
 │   └── Saturn.html           Design reference export — never edited
 ├── CONTEXT.md                Living log of what was built and why
-├── package.json              Deps for the serverless function only (jose)
+├── firestore.rules / storage.rules  Owner-only cloud policy
+├── tests/                    Unit, API, rules, browser, and axe tests
+├── package.json              Development and serverless dependencies
 └── vercel.json               Tells Vercel to serve public/ with no build step
 ```
 
 ## Run locally
 
-No install needed. Either open `public/app.html` directly in a browser (or
-`public/index.html` for the landing page), or serve it. Use the local server
-option when testing Google sign-in:
+Install the pinned Node version and dependencies, then start the local server:
 
 ```bash
-cd public && python3 -m http.server   # → http://localhost:8000
+nvm use
+npm ci
+npm run dev
 ```
 
 ## Deploy
@@ -64,10 +67,12 @@ as a plain static site.
 
 ## A note about your data
 
-Notes live entirely in **your browser's localStorage**. Signed-out notes use
+Records are cached in **your browser's localStorage**. Signed-out notes use
 the key `saturn-pkm-notes`, deleted notes use `saturn-pkm-deleted-notes`,
 planner data uses `saturn-pkm-planner-*`, and signed-in data uses
 Google-user-specific keys. Images are stored as compressed blobs in the
-browser's IndexedDB (`saturn-pkm-images`) and are cleaned up automatically
-when nothing references them. Nothing is uploaded anywhere — which also means
-data doesn't sync between browsers or devices, and clearing site data deletes it.
+browser's IndexedDB (`saturn-pkm-images`). Use Data & Sync to export or restore a complete backup. Cloud sync remains off unless the deployment enables `window.SATURN_FEATURES.cloudSync` after deploying Firebase rules. When enabled, authenticated records and images use owner-scoped Firestore and Storage paths while local storage remains the offline cache.
+
+## Verification
+
+`npm run check` runs syntax, lint, unit/API, and desktop/mobile browser tests. `npm run test:rules` starts Firebase emulators and checks cross-user denial. See [CONTRIBUTING.md](CONTRIBUTING.md).

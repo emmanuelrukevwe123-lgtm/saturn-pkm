@@ -15,9 +15,9 @@ body {
   --surface: #FDF8EB;
   --surface-2: #EDE1C5;
   --ink: #294540;
-  --muted: #85795E;
+  --muted: #665C46;
   --line: #DCCDA9;
-  --accent: #C2551F;
+  --accent: #A53F12;
   --accent-tint: rgba(194,85,31,0.12);
   --track: #E5D8B8;
   background: var(--bg);
@@ -29,7 +29,7 @@ body.dark {
   --surface: #23423B;
   --surface-2: #2B4E46;
   --ink: #F2E8D2;
-  --muted: #A2B29B;
+  --muted: #C0CCB9;
   --line: #34544A;
   --accent: #E98B4C;
   --accent-tint: rgba(233,139,76,0.16);
@@ -115,7 +115,7 @@ body.nav-open .menu-toggle span:nth-child(3) { transform: translateY(-6px) rotat
 
 .menu-label {
   font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
-  color: var(--muted); margin: 36px 0 10px; opacity: 0.8;
+  color: var(--muted); margin: 36px 0 10px;
 }
 
 .side-nav { display: flex; flex-direction: column; gap: 14px; }
@@ -667,5 +667,24 @@ body.dark .ask-pop .ai-panel-body { color: #FFFFFF; }
 
 .app-version {
   margin-top: 10px; text-align: center; font-size: 10px; font-weight: 700;
-  letter-spacing: 1px; color: var(--muted); opacity: 0.7;
+  letter-spacing: 1px; color: var(--muted);
+}
+
+/* Data safety, accessibility, and keyboard affordances */
+.data-panel { padding: 22px; margin-top: 18px; }
+.data-panel p { color: var(--muted); margin: 8px 0 16px; }
+.sync-state { margin: 14px 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; color: var(--muted); }
+.sync-state.error { border-color: #B3261E; color: #B3261E; }
+.import-mode { display: flex; flex-wrap: wrap; gap: 14px; border: 0; margin: 14px 0; }
+.import-mode legend { font-weight: 700; margin-bottom: 8px; }
+.graph-alternative { margin-top: 16px; }
+.graph-alternative ul { padding-left: 22px; color: var(--muted); }
+.graph-alternative li + li { margin-top: 5px; }
+.kb-grip { cursor: grab; }
+.kb-grip:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, [contenteditable]:focus-visible, a:focus-visible {
+  outline: 3px solid var(--accent); outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: 0.01ms !important; }
 }

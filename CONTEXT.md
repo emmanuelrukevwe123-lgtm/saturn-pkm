@@ -1,5 +1,9 @@
 # Project Context — Saturn PKM
 
+## Production-hardening architecture (v15)
+
+The static UI remains in `public/script.js`, while `public/modules/` owns testable domain, schema migration/transactional persistence, backup validation, tab reconciliation, and cloud conflict contracts. Schema v2 retains numeric legacy IDs and assigns UUIDs to new records. LocalStorage is the offline record cache; IndexedDB stores image blobs. Cloud sync is a feature-flagged Firestore/Storage replication layer, not the primary store. The AI boundary is `api/ai.js`, protected by verified-email allowlisting and durable Upstash limits.
+
 > Living log of what Claude is building and why. Updated as work happens.
 
 ## What this project is
@@ -274,6 +278,21 @@ summaries + "Ask Saturn" Q&A over the user's notes).
   arbitrary widths. Pointer-capture pattern from the kanban grip; handles are 20px on
   coarse pointers; `[hidden]{display:none}` overrides guard against the display-vs-
   hidden CSS trap found earlier today.
+
+- **2026-07-14** — **Codex's v15 production hardening verified and shipped.** Claude
+  verified the pass before commit: Codex's own gate (syntax, eslint, 13/13 Vitest
+  unit+API, 6/6 Playwright+axe) plus the pre-existing scratchpad regression suites
+  (planner 55/55, images 24/24, resize-ai 20/20, drag-resize 17/17 — updated for
+  legitimate v15 changes: version marker, delete→tombstones, UUID ids, ES-module
+  scoping) plus a fresh backup roundtrip smoke (export → wipe → replace-restore
+  incl. images, 7/7). Confirmed old numeric `{{img:ID}}` tokens still render (string-
+  normalized cache with numeric fallback). Ship prerequisites done by user first:
+  Upstash Redis + `AI_ALLOWED_EMAILS`/`UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN`
+  in Vercel (AI now allowlisted per email + rate-limited 10/10min, 100/day).
+  `test:rules` deliberately skipped (needs Firebase emulators; cloudSync ships OFF).
+  Note for future sessions: global Playwright 1.60 browsers were replaced by the
+  project's 1.61 — run scratchpad suites with `NODE_PATH=<repo>/node_modules`.
+  Still pending: the Ask-Saturn `thinkingBudget: 0` speed fix (Phase D, separate ship).
 
 ## Features shipped
 - Two-pane Saturn-styled UI (monochrome light + dark themes, Baloo 2 + Quicksand, 252px sidebar)

@@ -1,3 +1,15 @@
+import {
+  conflictCopy, newId, normalizeTitle, renameNoteState, rewriteWikiLinks, sameId, titleKey, uniqueTitle,
+} from "./modules/domain.js";
+import {
+  migrateLegacyStorage, readNotebook, writeNotebook,
+} from "./modules/persistence.js";
+import {
+  base64ToBlob, blobToBase64, createBackup, prepareImport, summarizeImport, validateBackup,
+} from "./modules/backup.js";
+import { TabCoordinator } from "./modules/tab-sync.js";
+import { mergeSyncCollection, syncRecord, tombstoneExpired } from "./modules/cloud-sync.js";
+
 /* ============================================================
    Saturn PKM — all app logic
    State = an array of note objects, saved to localStorage.
@@ -7,11 +19,11 @@
    Saturn design export's Today / Topics / Progress / Add views.
    ============================================================ */
 
-const APP_VERSION = "v14";
+const APP_VERSION = "v15";
 // Cloud sync is parked: the Firestore (default) database doesn't exist in the
 // project yet. All sync code below stays dormant behind this flag — to bring
 // it back, create the database (docs/GOOGLE_AUTH.md §5) and flip to true.
-const CLOUD_SYNC_ENABLED = false;
+const CLOUD_SYNC_ENABLED = window.SATURN_FEATURES?.cloudSync === true;
 
 // ---------- Visible error reporting ----------
 // If anything throws, show it on screen instead of failing silently —
@@ -28,6 +40,17 @@ function reportAppError(message) {
   }
   el.textContent = "Saturn " + APP_VERSION + " error: " + message +
     " — please screenshot this message.";
+}
+
+function reportStorageRecovery(message) {
+  reportAppError(message);
+  const el = document.getElementById("app-error");
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = "Open Data & Sync to export";
+  button.style.cssText = "margin-left:12px;padding:5px 9px;border:0;border-radius:6px;cursor:pointer";
+  button.addEventListener("click", () => showScreen("data"));
+  el.appendChild(button);
 }
 window.addEventListener("error", (e) => reportAppError(e.message || "unknown error"));
 window.addEventListener("unhandledrejection", (e) =>
@@ -56,6 +79,8 @@ let authStatus = "checking";
 let authError = "";
 let authApi = null;
 let noteDraft = null;
+let coordinator = null;
+let storageProblem = "";
 
 // Planner state
 let projects = [];              // {id, name, created, updated}
@@ -74,7 +99,7 @@ const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","
 const WD = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
 // Retro tag palette: teal / orange / brown / olive (light / dark values)
-const TAG_LIGHT = ["#2F5D54", "#C2551F", "#7A5230", "#6B7A3A"];
+const TAG_LIGHT = ["#2F5D54", "#9A3A10", "#6A4225", "#566425"];
 const TAG_DARK  = ["#8FD0C2", "#EFA067", "#D9B48A", "#C2CC8B"];
 
 // ---------- Elements ----------
@@ -90,6 +115,7 @@ const screens = {
   add: $("#screen-add"),
   planner: $("#screen-planner"),
   board: $("#screen-board"),
+  data: $("#screen-data"),
 };
 
 const ledgerEl     = $("#ledger");
@@ -188,54 +214,77 @@ function parseStoredTasks(raw) {
 }
 
 function save() {
-  localStorage.setItem(storageKey, JSON.stringify(notes));
-  scheduleCloudPush();
+  persistAll();
 }
 
 function saveProjects() {
-  localStorage.setItem(plannerProjectsKey, JSON.stringify(projects));
-  scheduleCloudPush(); // no-op while cloud sync is parked; hook for later
+  persistAll();
 }
 
 function saveTasks() {
-  localStorage.setItem(plannerTasksKey, JSON.stringify(plannerTasks));
-  scheduleCloudPush();
-}
-
-function loadPlanner() {
-  projects = parseStoredProjects(localStorage.getItem(plannerProjectsKey));
-  plannerTasks = parseStoredTasks(localStorage.getItem(plannerTasksKey));
+  persistAll();
 }
 
 function saveDeleted() {
-  localStorage.setItem(deletedStorageKey, JSON.stringify(deletedNotes));
-  scheduleCloudPush();
-}
-
-function loadNotes() {
-  notes = storedNotesFor(storageKey);
-  deletedNotes = storedNotesFor(deletedStorageKey);
+  persistAll();
 }
 
 function load() {
-  loadNotes();
-  loadPlanner();
+  const migrated = migrateLegacyStorage(localStorage, {
+    notes: storageKey, deletedNotes: deletedStorageKey,
+    projects: plannerProjectsKey, tasks: plannerTasksKey,
+  });
+  notes = migrated.state.notes;
+  deletedNotes = migrated.state.deletedNotes;
+  projects = migrated.state.projects;
+  plannerTasks = migrated.state.tasks;
   dark = localStorage.getItem(THEME_KEY) === "dark";
+}
+
+function currentState() {
+  return { notes, deletedNotes, projects, tasks: plannerTasks };
+}
+
+function applyState(state) {
+  notes = state.notes;
+  deletedNotes = state.deletedNotes;
+  projects = state.projects;
+  plannerTasks = state.tasks;
+}
+
+function persistAll({ announce = true } = {}) {
+  try {
+    const normalized = writeNotebook(localStorage, {
+      notes: storageKey, deletedNotes: deletedStorageKey,
+      projects: plannerProjectsKey, tasks: plannerTasksKey,
+    }, currentState());
+    applyState(normalized);
+    storageProblem = "";
+    if (announce) coordinator?.announce(storageKey);
+    scheduleCloudPush();
+    renderStorageState();
+    return true;
+  } catch (error) {
+    storageProblem = error.message;
+    reportStorageRecovery(error.message);
+    renderStorageState();
+    return false;
+  }
 }
 
 // ---------- Helpers ----------
 function getNote(id) {
-  return notes.find((n) => n.id === id);
+  return notes.find((n) => sameId(n.id, id));
 }
 
 function findByTitle(title) {
-  const t = title.trim().toLowerCase();
-  return notes.find((n) => n.title.trim().toLowerCase() === t);
+  const t = titleKey(title);
+  return notes.find((n) => titleKey(n.title) === t);
 }
 
 // All [[link targets]] inside a body, as raw title strings
 function linksIn(body) {
-  return [...body.matchAll(/\[\[([^\[\]]+)\]\]/g)].map((m) => m[1].trim());
+  return [...body.matchAll(/\[\[([^\]]+)\]\]/g)].map((m) => m[1].trim());
 }
 
 // Notes whose body links to `note`
@@ -243,8 +292,8 @@ function backlinksTo(note) {
   const target = note.title.trim().toLowerCase();
   return notes.filter(
     (n) =>
-      n.id !== note.id &&
-      linksIn(n.body).some((t) => t.toLowerCase() === target)
+      !sameId(n.id, note.id) &&
+      linksIn(n.body).some((t) => titleKey(t) === target)
   );
 }
 
@@ -298,7 +347,7 @@ function draftFrom(note) {
 }
 
 function ensureDraft(note) {
-  if (!noteDraft || noteDraft.id !== note.id) noteDraft = draftFrom(note);
+  if (!noteDraft || !sameId(noteDraft.id, note.id)) noteDraft = draftFrom(note);
   return noteDraft;
 }
 
@@ -422,7 +471,7 @@ function referencedImageIds() {
     const key = localStorage.key(i);
     if (!key.startsWith(STORAGE_KEY) && !key.startsWith(TRASH_KEY)) continue;
     const raw = localStorage.getItem(key) || "";
-    for (const m of raw.matchAll(/\{\{img:(\d+)(?::\d+)?\}\}/g)) ids.add(Number(m[1]));
+    for (const m of raw.matchAll(/\{\{img:([\w-]+)(?::\d+)?\}\}/g)) ids.add(String(m[1]));
   }
   return ids;
 }
@@ -435,11 +484,11 @@ async function initImages() {
   for (const rec of records) {
     // Purge blobs no note mentions anymore — but give fresh uploads a day's
     // grace so an image sitting in an unsaved draft in another tab survives.
-    if (!referenced.has(rec.id) && Date.parse(rec.created || "") < dayAgo) {
+    if (!referenced.has(String(rec.id)) && Date.parse(rec.created || "") < dayAgo) {
       await idbDeleteImage(rec.id);
       continue;
     }
-    imgURLs.set(rec.id, URL.createObjectURL(rec.blob));
+    imgURLs.set(String(rec.id), URL.createObjectURL(rec.blob));
   }
   renderScreen(); // notes rendered before the cache filled get their images
 }
@@ -456,8 +505,8 @@ function renderMarkdown(src) {
       // {{img:ID}} or {{img:ID:WIDTH%}} — stored in IndexedDB; keep the token
       // (atomic span) when the blob isn't on this device so an edit round-trip
       // can't drop it
-      .replace(/\{\{img:(\d+)(?::(\d+))?\}\}/g, (_, id, w) => {
-        const url = imgURLs.get(Number(id));
+      .replace(/\{\{img:([\w-]+)(?::(\d+))?\}\}/g, (_, id, w) => {
+        const url = imgURLs.get(String(id)) || imgURLs.get(Number(id));
         const width = w ? Math.min(100, Math.max(10, Number(w))) : 100;
         const wAttrs = width !== 100 ? ` data-w="${width}"` : "";
         return url
@@ -465,7 +514,7 @@ function renderMarkdown(src) {
           : `<span class="img-missing" contenteditable="false" data-img="${id}"${wAttrs}>image not on this device</span>`;
       })
       // [[wiki links]] — existing notes vs missing "ghost" links
-      .replace(/\[\[([^\[\]]+)\]\]/g, (_, title) => {
+      .replace(/\[\[([^\]]+)\]\]/g, (_, title) => {
         const target = findByTitle(title);
         const cls = target ? "wiki-link" : "wiki-link missing";
         return `<a class="${cls}" data-link="${escapeHTML(title.trim())}">${title.trim()}</a>`;
@@ -686,6 +735,7 @@ function renderScreen() {
     else if (screen === "bin") renderBin();
     else if (screen === "planner") renderPlanner();
     else if (screen === "board") renderBoard();
+    else if (screen === "data") renderDataScreen();
   } catch (err) {
     reportAppError((err && err.message) || String(err));
     throw err;
@@ -958,13 +1008,184 @@ function deletedNoteRow(note) {
 
 function renderBin() {
   deletedList.innerHTML = "";
-  const list = [...deletedNotes].sort((a, b) =>
+  const list = deletedNotes.filter((note) => !note.purged).sort((a, b) =>
     (b.deletedAt || b.updated || "").localeCompare(a.deletedAt || a.updated || "")
   );
   list.forEach((note) => deletedList.appendChild(deletedNoteRow(note)));
   binEmpty.hidden = list.length > 0;
   deletedList.hidden = list.length === 0;
 }
+
+// ---------- Data & Sync ----------
+const storageStateEl = $("#storage-state");
+const importFileEl = $("#data-import-file");
+const importButton = $("#data-import");
+const importSummaryEl = $("#import-summary");
+
+function renderStorageState(message = "") {
+  if (!storageStateEl) return;
+  storageStateEl.classList.toggle("error", !!storageProblem);
+  storageStateEl.textContent = storageProblem || message ||
+    (CLOUD_SYNC_ENABLED && currentUser ? "Cloud sync enabled; local cache is ready." : "Local data ready. Export regularly to keep a portable copy.");
+}
+
+function renderDataScreen() {
+  renderStorageState();
+  const detail = $("#sync-detail");
+  if (detail) detail.textContent = CLOUD_SYNC_ENABLED
+    ? (currentUser ? `Sync state: ${cloudStatus}. Changes remain cached offline.` : "Sign in to sync; this notebook remains local until then.")
+    : "Local-only. Cloud sync is behind a deployment feature flag until Firebase rules and indexes are deployed.";
+}
+
+function handleExternalNotebookChange(message) {
+  const relevant = new Set([storageKey, deletedStorageKey, plannerProjectsKey, plannerTasksKey]);
+  if (message?.key && !relevant.has(message.key)) return;
+  const external = readNotebook(localStorage, {
+    notes: storageKey, deletedNotes: deletedStorageKey,
+    projects: plannerProjectsKey, tasks: plannerTasksKey,
+  });
+  if (draftIsDirty()) {
+    const localBase = getNote(selectedId);
+    const externalNote = external.notes.find((note) => sameId(note.id, selectedId));
+    if (externalNote && localBase && JSON.stringify(externalNote) !== JSON.stringify(localBase)) {
+      external.notes = external.notes.filter((note) => !sameId(note.id, selectedId));
+      external.notes.push(localBase, conflictCopy(externalNote, [...external.notes, localBase], "other tab"));
+      applyState(external);
+      persistAll({ announce: false });
+      renderStorageState("Another tab changed this open note. Your draft was kept and its version was saved as a conflict copy.");
+    } else {
+      applyState(external);
+      renderStorageState("Changes from another tab were reconciled; your unsaved editor was not replaced.");
+    }
+  } else {
+    applyState(external);
+    renderStorageState("Changes from another tab were loaded.");
+  }
+  renderScreen();
+}
+
+function referencedCurrentImages() {
+  const ids = new Set();
+  for (const note of [...notes, ...deletedNotes])
+    for (const match of note.body.matchAll(/\{\{img:([\w-]+)(?::\d+)?\}\}/g)) ids.add(String(match[1]));
+  return ids;
+}
+
+async function backupImages() {
+  if (!imgDB) imgDB = await openImageDB();
+  const referenced = referencedCurrentImages();
+  const records = (await idbAllImages()).filter((record) => referenced.has(String(record.id)));
+  return Promise.all(records.map(async (record) => ({
+    id: record.id,
+    type: record.blob.type || record.type || "application/octet-stream",
+    created: record.created || "",
+    data: await blobToBase64(record.blob),
+  })));
+}
+
+async function replaceImages(records) {
+  if (!imgDB) imgDB = await openImageDB();
+  await new Promise((resolve, reject) => {
+    const tx = imgDB.transaction("images", "readwrite");
+    const store = tx.objectStore("images");
+    store.clear();
+    for (const record of records) store.put(record);
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error || new Error("Image import was cancelled."));
+  });
+  for (const url of imgURLs.values()) URL.revokeObjectURL(url);
+  imgURLs.clear();
+  for (const record of records) imgURLs.set(String(record.id), URL.createObjectURL(record.blob));
+}
+
+$("#data-export")?.addEventListener("click", async () => {
+  const button = $("#data-export");
+  button.disabled = true;
+  renderStorageState("Preparing backup…");
+  try {
+    const images = await backupImages();
+    const envelope = createBackup({
+      appVersion: APP_VERSION,
+      notebook: currentUser ? { scope: "account", uid: currentUser.uid } : { scope: "local" },
+      state: currentState(), images,
+      settings: { theme: dark ? "dark" : "light", cloudSyncEnabled: CLOUD_SYNC_ENABLED },
+    });
+    const blob = new Blob([JSON.stringify(envelope, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `saturn-${new Date().toISOString().slice(0, 10)}.saturn`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    renderStorageState(`Backup exported: ${notes.length} notes and ${images.length} images.`);
+  } catch (error) {
+    storageProblem = error.message;
+    renderStorageState();
+  } finally {
+    button.disabled = false;
+  }
+});
+
+importFileEl?.addEventListener("change", () => {
+  importButton.disabled = !importFileEl.files?.length;
+  importSummaryEl.hidden = true;
+});
+
+importButton?.addEventListener("click", async () => {
+  const file = importFileEl.files?.[0];
+  if (!file) return;
+  importButton.disabled = true;
+  const stateSnapshot = structuredClone(currentState());
+  let imageSnapshot = null;
+  try {
+    const envelope = JSON.parse(await file.text());
+    const validation = validateBackup(envelope);
+    if (!validation.valid) throw new Error(validation.errors.join(" "));
+    const mode = document.querySelector("input[name='import-mode']:checked")?.value || "merge";
+    const next = prepareImport(currentState(), envelope, mode);
+    const summary = summarizeImport(currentState(), next, envelope.images);
+    importSummaryEl.hidden = false;
+    importSummaryEl.textContent = `${mode === "replace" ? "Replace with" : "Restore"} ${summary.notes} active notes, ${summary.deletedNotes} deleted notes, ${summary.projects} projects, ${summary.tasks} tasks, and ${summary.images} images.`;
+    if (!confirm(`${importSummaryEl.textContent}\n\nContinue?`)) return;
+
+    if (!imgDB) imgDB = await openImageDB();
+    imageSnapshot = await idbAllImages();
+    const importedImages = envelope.images.map((record) => ({
+      id: record.id, created: record.created || new Date().toISOString(),
+      blob: base64ToBlob(record.data, record.type),
+    }));
+    const images = mode === "replace"
+      ? importedImages
+      : [...new Map([...imageSnapshot, ...importedImages].map((record) => [String(record.id), record])).values()];
+    await replaceImages(images);
+    applyState(next);
+    if (!persistAll()) throw new Error(storageProblem);
+    if (envelope.settings?.theme === "dark" || envelope.settings?.theme === "light") {
+      dark = envelope.settings.theme === "dark";
+      localStorage.setItem(THEME_KEY, envelope.settings.theme);
+      applyTheme();
+    }
+    renderStorageState("Import completed and validated successfully.");
+    renderScreen();
+  } catch (error) {
+    applyState(stateSnapshot);
+    try {
+      writeNotebook(localStorage, {
+        notes: storageKey, deletedNotes: deletedStorageKey,
+        projects: plannerProjectsKey, tasks: plannerTasksKey,
+      }, stateSnapshot);
+      if (imageSnapshot) await replaceImages(imageSnapshot);
+    } catch { /* keep original failure */ }
+    storageProblem = `Import made no changes: ${error.message}`;
+    importSummaryEl.hidden = false;
+    importSummaryEl.textContent = storageProblem;
+    importSummaryEl.classList.add("error");
+    renderStorageState();
+  } finally {
+    importButton.disabled = !importFileEl.files?.length;
+  }
+});
 
 // ---------- Theme ----------
 function applyTheme() {
@@ -1007,6 +1228,8 @@ function renderAuth() {
     authMeta.textContent = {
       syncing: "Syncing…",
       synced: "Synced across your devices",
+      pending: "Offline — changes pending",
+      conflict: "Synced — conflict copy created",
       error: "Sync error — will retry",
       unavailable: "Signed in — cloud sync not set up"
     }[cloudStatus] || "Signed in with Google";
@@ -1092,8 +1315,7 @@ function switchNotebookForUser(user) {
     taskDetailId = null;
     taskDraft = null;
     searchInput.value = "";
-    loadNotes();
-    loadPlanner();
+    load();
     // With sync parked, every notebook seeds locally. (When sync returns:
     // skip seeding for signed-in users so starter notes don't push up.)
     if (!user || !CLOUD_SYNC_ENABLED) seedIfEmpty();
@@ -1118,9 +1340,11 @@ function switchNotebookForUser(user) {
 // localStorage stays the offline-first source; sync is a write-through
 // layer: pull+merge on sign-in and on tab focus, debounced push on save.
 let cloudApi = null;                 // Firestore bindings, set in initGoogleAuth
+let cloudImageApi = null;
 let cloudStatus = "off";             // off | syncing | synced | error | unavailable
 let cloudNoteStamp = new Map();      // note id -> timestamp last seen in cloud
-let cloudBinStamp = new Map();
+let cloudProjectStamp = new Map();
+let cloudTaskStamp = new Map();
 let cloudPushTimer = null;
 let cloudLastPull = 0;
 
@@ -1136,18 +1360,59 @@ function cloudDocRef(kind, id) {
   return cloudApi.doc(cloudApi.db, "users", currentUser.uid, kind, String(id));
 }
 
+async function hashBlob(blob) {
+  const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function imageQueueKey() {
+  return `saturn-pkm-image-queue:${currentUser?.uid || "local"}`;
+}
+
+async function syncCloudImages() {
+  if (!cloudReady() || !cloudImageApi) return;
+  if (!navigator.onLine) {
+    cloudStatus = "pending";
+    localStorage.setItem(imageQueueKey(), JSON.stringify([...referencedCurrentImages()]));
+    renderAuth();
+    return;
+  }
+  if (!imgDB) imgDB = await openImageDB();
+  const referenced = referencedCurrentImages();
+  const local = await idbAllImages();
+  const localById = new Map(local.map((record) => [String(record.id), record]));
+  const metadataSnap = await cloudApi.getDocs(cloudApi.collection(cloudApi.db, "users", currentUser.uid, "images"));
+  const metadata = new Map();
+  metadataSnap.forEach((entry) => metadata.set(String(entry.id), entry.data()));
+  for (const id of referenced) {
+    const record = localById.get(id);
+    const path = `users/${currentUser.uid}/images/${id}`;
+    if (record) {
+      const hash = await hashBlob(record.blob);
+      if (metadata.get(id)?.hash !== hash) {
+        await cloudImageApi.uploadBytes(cloudImageApi.ref(cloudImageApi.storage, path), record.blob, {
+          contentType: record.blob.type || "image/jpeg", customMetadata: { hash },
+        });
+        await cloudApi.setDoc(cloudDocRef("images", id), {
+          id, hash, size: record.blob.size, contentType: record.blob.type || "image/jpeg",
+          deviceId: getDeviceId(), updatedAt: cloudApi.serverTimestamp(), path,
+        });
+      }
+    } else if (metadata.has(id)) {
+      const blob = await cloudImageApi.getBlob(cloudImageApi.ref(cloudImageApi.storage, path));
+      const imported = { id, blob, created: new Date().toISOString() };
+      await idbPutImage(imported);
+      imgURLs.set(id, URL.createObjectURL(blob));
+    }
+  }
+  localStorage.removeItem(imageQueueKey());
+}
+
 // Strip to known fields so foreign junk never lands in the database
-function cloudDocFor(n) {
-  const d = {
-    id: n.id,
-    title: n.title,
-    body: n.body,
-    tags: n.tags,
-    created: n.created || "",
-    updated: n.updated || ""
-  };
-  if (n.deletedAt) d.deletedAt = n.deletedAt;
-  return d;
+function cloudDocFor(record, type, tombstone = false) {
+  return syncRecord(record, {
+    type, tombstone, deviceId: getDeviceId(), serverTimestamp: cloudApi.serverTimestamp(),
+  });
 }
 
 function markCloudFailure(error) {
@@ -1172,50 +1437,63 @@ function withTimeout(promise, ms) {
 
 // Merge cloud + local: per note id, the newest timestamp wins; when an id
 // appears both active and in the bin, the later event decides where it lives.
-function mergeCloudState(cloudNotes, cloudBin) {
-  const best = new Map();
-  const offer = (n, inBin) => {
-    const key = String(n.id);
-    const current = best.get(key);
-    if (!current || noteTimestamp(n) > noteTimestamp(current.note)) {
-      best.set(key, { note: n, bin: inBin });
-    }
-  };
-  for (const n of notes) offer(n, false);
-  for (const n of deletedNotes) offer(n, true);
-  for (const n of cloudNotes) offer(n, false);
-  for (const n of cloudBin) offer(n, true);
-  notes = [];
-  deletedNotes = [];
-  for (const { note, bin } of best.values()) (bin ? deletedNotes : notes).push(note);
+function mergeCloudState(cloudNotes, cloudProjects, cloudTasks) {
+  const localNotes = [
+    ...notes.map((note) => ({ ...note, tombstone: false })),
+    ...deletedNotes.map((note) => ({ ...note, tombstone: true })),
+  ];
+  const mergedNotes = mergeSyncCollection(localNotes, cloudNotes, "note");
+  const noteConflict = mergedNotes.length > new Set([...localNotes, ...cloudNotes].map((note) => String(note.id))).size;
+  notes = mergedNotes.filter((note) => !note.tombstone && !note.deletedAt);
+  deletedNotes = mergedNotes.filter((note) => note.tombstone || note.deletedAt);
+  deletedNotes = deletedNotes.filter((note) => !(note.purged && tombstoneExpired(note)));
+  projects = mergeSyncCollection(projects, cloudProjects, "project");
+  const mergedTasks = mergeSyncCollection(plannerTasks, cloudTasks, "task");
+  const taskConflict = mergedTasks.length > new Set([...plannerTasks, ...cloudTasks].map((task) => String(task.id))).size;
+  plannerTasks = mergedTasks;
   notes.sort((a, b) => ((a.created || "") < (b.created || "") ? -1 : 1));
+  return noteConflict || taskConflict;
 }
 
 async function pullAndMergeCloud() {
   if (!cloudReady()) return;
+  if (!navigator.onLine) { cloudStatus = "pending"; renderAuth(); return; }
   cloudStatus = "syncing";
   renderAuth();
   try {
     const uid = currentUser.uid;
-    const [noteSnap, binSnap] = await withTimeout(Promise.all([
+    const migrationKey = `saturn-pkm-cloud-migrated:${uid}`;
+    const needsLegacy = !localStorage.getItem(migrationKey);
+    const [noteSnap, projectSnap, taskSnap, binSnap] = await withTimeout(Promise.all([
       cloudApi.getDocs(cloudApi.collection(cloudApi.db, "users", uid, "notes")),
-      cloudApi.getDocs(cloudApi.collection(cloudApi.db, "users", uid, "bin"))
+      cloudApi.getDocs(cloudApi.collection(cloudApi.db, "users", uid, "projects")),
+      cloudApi.getDocs(cloudApi.collection(cloudApi.db, "users", uid, "tasks")),
+      needsLegacy
+        ? cloudApi.getDocs(cloudApi.collection(cloudApi.db, "users", uid, "bin"))
+        : Promise.resolve({ forEach() {} }),
     ]), 15000);
-    const rawNotes = [], rawBin = [];
+    const rawNotes = [], rawProjects = [], rawTasks = [], rawBin = [];
     noteSnap.forEach((d) => rawNotes.push(d.data()));
+    projectSnap.forEach((d) => rawProjects.push(d.data()));
+    taskSnap.forEach((d) => rawTasks.push(d.data()));
     binSnap.forEach((d) => rawBin.push(d.data()));
     // Reuse the localStorage normalizer so odd cloud docs can't crash us
-    const cloudNotes = parseStoredNotes(JSON.stringify(rawNotes));
-    const cloudBin = parseStoredNotes(JSON.stringify(rawBin));
+    const cloudNotes = parseStoredNotes(JSON.stringify([
+      ...rawNotes,
+      ...rawBin.map((note) => ({ ...note, tombstone: true, deletedAt: note.deletedAt || note.updated })),
+    ])).filter((record) => !tombstoneExpired(record));
+    const cloudProjects = parseStoredProjects(JSON.stringify(rawProjects));
+    const cloudTasks = parseStoredTasks(JSON.stringify(rawTasks));
 
     cloudNoteStamp = new Map(cloudNotes.map((n) => [String(n.id), noteTimestamp(n)]));
-    cloudBinStamp = new Map(cloudBin.map((n) => [String(n.id), noteTimestamp(n)]));
+    cloudProjectStamp = new Map(cloudProjects.map((n) => [String(n.id), noteTimestamp(n)]));
+    cloudTaskStamp = new Map(cloudTasks.map((n) => [String(n.id), noteTimestamp(n)]));
 
-    mergeCloudState(cloudNotes, cloudBin);
+    const conflictCreated = mergeCloudState(cloudNotes, cloudProjects, cloudTasks);
+    if (needsLegacy) localStorage.setItem(migrationKey, new Date().toISOString());
     cloudLastPull = Date.now();
-    cloudStatus = "synced";
-    save();        // persists merged state locally + schedules push of local-only notes
-    saveDeleted();
+    cloudStatus = conflictCreated ? "conflict" : "synced";
+    persistAll();
     renderScreen();
   } catch (error) {
     markCloudFailure(error);
@@ -1231,30 +1509,27 @@ function scheduleCloudPush() {
 
 async function pushToCloud() {
   if (!cloudReady()) return;
+  if (!navigator.onLine) { cloudStatus = "pending"; renderAuth(); return; }
   cloudStatus = "syncing";
   renderAuth();
   try {
     const jobs = [];
-    const syncCollection = (list, kind, stamps) => {
-      const localIds = new Set(list.map((n) => String(n.id)));
+    const syncCollection = (list, kind, type, stamps) => {
       for (const n of list) {
         const key = String(n.id);
         if (stamps.get(key) !== noteTimestamp(n)) {
           jobs.push(
-            cloudApi.setDoc(cloudDocRef(kind, key), cloudDocFor(n))
+            cloudApi.setDoc(cloudDocRef(kind, key), cloudDocFor(n, type, !!n.tombstone || !!n.deletedAt))
               .then(() => stamps.set(key, noteTimestamp(n)))
           );
         }
       }
-      for (const key of [...stamps.keys()]) {
-        if (!localIds.has(key)) {
-          jobs.push(cloudApi.deleteDoc(cloudDocRef(kind, key)).then(() => stamps.delete(key)));
-        }
-      }
     };
-    syncCollection(notes, "notes", cloudNoteStamp);
-    syncCollection(deletedNotes, "bin", cloudBinStamp);
+    syncCollection([...notes, ...deletedNotes], "notes", "note", cloudNoteStamp);
+    syncCollection(projects, "projects", "project", cloudProjectStamp);
+    syncCollection(plannerTasks, "tasks", "task", cloudTaskStamp);
     await withTimeout(Promise.all(jobs), 15000);
+    await withTimeout(syncCloudImages(), 30000);
     cloudStatus = "synced";
   } catch (error) {
     markCloudFailure(error);
@@ -1265,7 +1540,8 @@ async function pushToCloud() {
 function resetCloudState() {
   cloudStatus = "off";
   cloudNoteStamp = new Map();
-  cloudBinStamp = new Map();
+  cloudProjectStamp = new Map();
+  cloudTaskStamp = new Map();
   clearTimeout(cloudPushTimer);
 }
 
@@ -1273,6 +1549,10 @@ function resetCloudState() {
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState !== "visible") return;
   if (cloudReady() && Date.now() - cloudLastPull > 30_000) pullAndMergeCloud();
+});
+
+window.addEventListener("online", () => {
+  if (cloudReady()) { cloudStatus = "syncing"; renderAuth(); pushToCloud(); }
 });
 
 // Best-effort flush of a pending debounced push when the tab closes
@@ -1289,12 +1569,15 @@ async function initGoogleAuth() {
   }
 
   try {
-    const [{ initializeApp }, auth, firestore] = await Promise.all([
-      import("https://www.gstatic.com/firebasejs/" + FIREBASE_SDK_VERSION + "/firebase-app.js"),
-      import("https://www.gstatic.com/firebasejs/" + FIREBASE_SDK_VERSION + "/firebase-auth.js"),
+    const [{ initializeApp }, auth, firestore, storageSdk] = await Promise.all([
+      import(/* @vite-ignore */ "https://www.gstatic.com/firebasejs/" + FIREBASE_SDK_VERSION + "/firebase-app.js"),
+      import(/* @vite-ignore */ "https://www.gstatic.com/firebasejs/" + FIREBASE_SDK_VERSION + "/firebase-auth.js"),
       CLOUD_SYNC_ENABLED
-        ? import("https://www.gstatic.com/firebasejs/" + FIREBASE_SDK_VERSION + "/firebase-firestore.js")
-        : Promise.resolve(null)
+        ? import(/* @vite-ignore */ "https://www.gstatic.com/firebasejs/" + FIREBASE_SDK_VERSION + "/firebase-firestore.js")
+        : Promise.resolve(null),
+      CLOUD_SYNC_ENABLED
+        ? import(/* @vite-ignore */ "https://www.gstatic.com/firebasejs/" + FIREBASE_SDK_VERSION + "/firebase-storage.js")
+        : Promise.resolve(null),
     ]);
     const app = initializeApp(config);
     const firebaseAuth = auth.getAuth(app);
@@ -1305,7 +1588,14 @@ async function initGoogleAuth() {
         doc: firestore.doc,
         getDocs: firestore.getDocs,
         setDoc: firestore.setDoc,
-        deleteDoc: firestore.deleteDoc
+        deleteDoc: firestore.deleteDoc,
+        serverTimestamp: firestore.serverTimestamp,
+      };
+    }
+    if (storageSdk) {
+      cloudImageApi = {
+        storage: storageSdk.getStorage(app), ref: storageSdk.ref,
+        uploadBytes: storageSdk.uploadBytes, getBlob: storageSdk.getBlob,
       };
     }
     const provider = new auth.GoogleAuthProvider();
@@ -1361,18 +1651,19 @@ async function signInWithGoogle() {
     }
     await authApi.signInWithPopup(authApi.auth, authApi.provider);
   } catch (error) {
-    if (error.code === "auth/popup-blocked") {
+    let authFailure = error;
+    if (authFailure.code === "auth/popup-blocked") {
       try {
         await authApi.signInWithRedirect(authApi.auth, authApi.provider);
         return;
       } catch (redirectError) {
-        error = redirectError;
+        authFailure = redirectError;
       }
     }
     authStatus = "ready";
-    authError = friendlyAuthError(error);
+    authError = friendlyAuthError(authFailure);
     renderAuth();
-    if (error.code !== "auth/popup-closed-by-user") alert(authError);
+    if (authFailure.code !== "auth/popup-closed-by-user") alert(authError);
   }
 }
 
@@ -1391,9 +1682,22 @@ async function signOutGoogle() {
 }
 
 // ---------- Actions ----------
+function getDeviceId() {
+  const key = "saturn-pkm-device-id";
+  let id = localStorage.getItem(key);
+  if (!id) {
+    id = newId();
+    try { localStorage.setItem(key, id); } catch { /* persistence will surface quota failures */ }
+  }
+  return id;
+}
+
 function createNote({ title = "", tags = [], body = "" } = {}) {
   const now = new Date().toISOString();
-  const note = { id: Date.now(), title, body, tags, created: now, updated: now };
+  const note = {
+    id: newId(), title: uniqueTitle(title, notes), body, tags, created: now, updated: now,
+    revision: 0, baseRevision: 0, deviceId: getDeviceId(),
+  };
   notes.push(note);
   selectedId = note.id;
   save();
@@ -1403,34 +1707,47 @@ function createNote({ title = "", tags = [], body = "" } = {}) {
 function updateSelected(patch) {
   const note = getNote(selectedId);
   if (!note) return;
-  Object.assign(note, patch, { updated: new Date().toISOString() });
+  Object.assign(note, patch, {
+    updated: new Date().toISOString(), baseRevision: note.revision || 0,
+    revision: (note.revision || 0) + 1, deviceId: getDeviceId(),
+  });
   save();
 }
 
 function uniqueActiveTitle(title) {
-  const base = (title || "Untitled note").trim() || "Untitled note";
-  if (!findByTitle(base)) return base;
-  let i = 2;
-  while (findByTitle(base + " restored " + i)) i += 1;
-  return base + " restored " + i;
+  return uniqueTitle(title, notes);
 }
 
 function saveDraft() {
   const note = getNote(selectedId);
   if (!note || !noteDraft) return;
-  Object.assign(note, {
-    title: noteDraft.title.trim() || "Untitled note",
+  const snapshot = structuredClone(currentState());
+  const now = new Date().toISOString();
+  const oldTitle = note.title;
+  const nextTitle = uniqueTitle(noteDraft.title, notes, note.id);
+  const next = renameNoteState(currentState(), note.id, nextTitle, now);
+  const nextNote = next.notes.find((item) => sameId(item.id, note.id));
+  Object.assign(nextNote, {
+    title: nextTitle,
     tags: draftTags(),
-    body: noteDraft.body,
-    updated: new Date().toISOString()
+    body: rewriteWikiLinks(noteDraft.body, oldTitle, nextTitle),
+    updated: now,
+    baseRevision: note.revision || 0,
+    revision: (note.revision || 0) + 1,
+    deviceId: getDeviceId(),
   });
-  noteDraft = draftFrom(note);
-  save();
+  applyState(next);
+  if (!persistAll()) {
+    applyState(snapshot);
+    alert(storageProblem);
+    return;
+  }
+  noteDraft = draftFrom(getNote(selectedId));
   renderScreen();
 }
 
 function openNote(id, startMode) {
-  if (screen === "note" && selectedId !== id && !confirmDiscardDraft()) return;
+  if (screen === "note" && !sameId(selectedId, id) && !confirmDiscardDraft()) return;
   selectedId = id;
   noteDraft = null;
   showScreen("note");
@@ -1442,9 +1759,13 @@ function deleteNote(id) {
   if (!note) return;
   if (!confirm(`Move “${note.title || "Untitled note"}” to the Dead Stars bin?`)) return;
   const now = new Date().toISOString();
-  deletedNotes.unshift({ ...note, deletedAt: now });
-  notes = notes.filter((n) => n.id !== id);
-  if (selectedId === id) selectedId = null;
+  deletedNotes.unshift({
+    ...note, deletedAt: now, tombstone: true,
+    baseRevision: note.revision || 0, revision: (note.revision || 0) + 1,
+    deviceId: getDeviceId(),
+  });
+  notes = notes.filter((n) => !sameId(n.id, id));
+  if (sameId(selectedId, id)) selectedId = null;
   noteDraft = null;
   save();
   saveDeleted();
@@ -1453,15 +1774,26 @@ function deleteNote(id) {
 }
 
 function restoreNote(id) {
-  const note = deletedNotes.find((n) => n.id === id);
+  const note = deletedNotes.find((n) => sameId(n.id, id));
   if (!note) return;
   const restored = { ...note };
   delete restored.deletedAt;
-  if (notes.some((n) => n.id === restored.id)) restored.id = Date.now();
+  delete restored.tombstone;
+  delete restored.purged;
+  if (notes.some((n) => sameId(n.id, restored.id))) restored.id = newId();
   restored.title = uniqueActiveTitle(restored.title);
   restored.updated = new Date().toISOString();
+  restored.baseRevision = restored.revision || 0;
+  restored.revision = (restored.revision || 0) + 1;
+  restored.deviceId = getDeviceId();
   notes.push(restored);
-  deletedNotes = deletedNotes.filter((n) => n.id !== id);
+  note.purged = true;
+  note.tombstone = true;
+  note.updated = new Date().toISOString();
+  note.deletedAt = note.deletedAt || note.updated;
+  note.baseRevision = note.revision || 0;
+  note.revision = (note.revision || 0) + 1;
+  note.deviceId = getDeviceId();
   save();
   saveDeleted();
   selectedId = restored.id;
@@ -1470,10 +1802,10 @@ function restoreNote(id) {
 }
 
 function purgeNote(id) {
-  const note = deletedNotes.find((n) => n.id === id);
+  const note = deletedNotes.find((n) => sameId(n.id, id));
   if (!note) return;
   if (!confirm(`Delete “${note.title || "Untitled note"}” forever? This can't be undone.`)) return;
-  deletedNotes = deletedNotes.filter((n) => n.id !== id);
+  deletedNotes = deletedNotes.filter((n) => !sameId(n.id, id));
   saveDeleted();
   renderBin();
 }
@@ -1494,7 +1826,8 @@ $("#add-nav").addEventListener("click", () => {
 
 $("#theme-toggle").addEventListener("click", () => {
   dark = !dark;
-  localStorage.setItem(THEME_KEY, dark ? "dark" : "light");
+  try { localStorage.setItem(THEME_KEY, dark ? "dark" : "light"); }
+  catch (error) { storageProblem = error.message; reportStorageRecovery("Theme could not be saved because browser storage is full."); }
   applyTheme();
   renderScreen(); // re-tint tag chips for the new palette
 });
@@ -1519,9 +1852,9 @@ tagPillsEl.addEventListener("click", (e) => {
 // Ledger rows: open note, or delete via the row button
 ledgerEl.addEventListener("click", (e) => {
   const del = e.target.closest("[data-del]");
-  if (del) { deleteNote(Number(del.dataset.del)); return; }
+  if (del) { deleteNote(del.dataset.del); return; }
   const row = e.target.closest(".row");
-  if (row) openNote(Number(row.dataset.id));
+  if (row) openNote(row.dataset.id);
 });
 
 // Note screen
@@ -1569,9 +1902,9 @@ async function insertImageFile(file) {
   if (!getNote(selectedId)) return;
   try {
     const blob = await compressImage(file);
-    const id = Date.now();
+    const id = newId();
     await idbPutImage({ id, blob, created: new Date().toISOString() });
-    imgURLs.set(id, URL.createObjectURL(blob));
+    imgURLs.set(String(id), URL.createObjectURL(blob));
     renderedBody.focus();
     if (imgInsertRange) {
       const sel = window.getSelection();
@@ -1782,7 +2115,7 @@ renderedBody.addEventListener("click", (e) => {
 // Backlinks: open on click
 backlinksEl.addEventListener("click", (e) => {
   const row = e.target.closest(".row");
-  if (row) openNote(Number(row.dataset.id));
+  if (row) openNote(row.dataset.id);
 });
 
 // Tag accordion: expand / collapse, open notes
@@ -1794,21 +2127,21 @@ $("#tag-groups").addEventListener("click", (e) => {
     return;
   }
   const row = e.target.closest(".row");
-  if (row) openNote(Number(row.dataset.id));
+  if (row) openNote(row.dataset.id);
 });
 
 // Recently edited: open on click
 $("#recent-list").addEventListener("click", (e) => {
   const row = e.target.closest(".row");
-  if (row) openNote(Number(row.dataset.id));
+  if (row) openNote(row.dataset.id);
 });
 
 // Dead Stars bin
 deletedList.addEventListener("click", (e) => {
   const restore = e.target.closest("[data-restore]");
-  if (restore) { restoreNote(Number(restore.dataset.restore)); return; }
+  if (restore) { restoreNote(restore.dataset.restore); return; }
   const purge = e.target.closest("[data-purge]");
-  if (purge) purgeNote(Number(purge.dataset.purge));
+  if (purge) purgeNote(purge.dataset.purge);
 });
 
 // Add form
@@ -1840,22 +2173,25 @@ const taskNotesPreview = $("#task-notes-preview");
 const taskSaveBtn = $("#task-save");
 
 function getProject(id) {
-  return projects.find((p) => p.id === id);
+  return projects.find((p) => !p.tombstone && sameId(p.id, id));
 }
 
 function getTask(id) {
-  return plannerTasks.find((t) => t.id === id);
+  return plannerTasks.find((t) => !t.tombstone && sameId(t.id, id));
 }
 
 function tasksFor(projectId, status) {
   return plannerTasks
-    .filter((t) => t.projectId === projectId && t.status === status)
+    .filter((t) => !t.tombstone && sameId(t.projectId, projectId) && t.status === status)
     .sort((a, b) => a.order - b.order);
 }
 
 function createProject(name) {
   const now = new Date().toISOString();
-  const project = { id: Date.now(), name, created: now, updated: now };
+  const project = {
+    id: newId(), name, created: now, updated: now,
+    revision: 0, baseRevision: 0, deviceId: getDeviceId(),
+  };
   projects.push(project);
   saveProjects();
   return project;
@@ -1866,20 +2202,33 @@ function renameProject(id, name) {
   if (!project) return;
   project.name = name;
   project.updated = new Date().toISOString();
+  project.baseRevision = project.revision || 0;
+  project.revision = (project.revision || 0) + 1;
+  project.deviceId = getDeviceId();
   saveProjects();
 }
 
 function deleteProject(id) {
   const project = getProject(id);
   if (!project) return;
-  const count = plannerTasks.filter((t) => t.projectId === id).length;
+  const count = plannerTasks.filter((t) => !t.tombstone && sameId(t.projectId, id)).length;
   const label = count === 1 ? "its 1 task" : `its ${count} tasks`;
   if (!confirm(`Delete “${project.name || "Untitled project"}” and ${label}? This can't be undone.`)) return;
-  projects = projects.filter((p) => p.id !== id);
-  plannerTasks = plannerTasks.filter((t) => t.projectId !== id);
+  const now = new Date().toISOString();
+  project.tombstone = true;
+  project.deletedAt = now;
+  project.updated = now;
+  project.baseRevision = project.revision || 0;
+  project.revision = (project.revision || 0) + 1;
+  project.deviceId = getDeviceId();
+  for (const task of plannerTasks.filter((item) => sameId(item.projectId, id))) {
+    task.tombstone = true; task.deletedAt = now; task.updated = now;
+    task.baseRevision = task.revision || 0; task.revision = (task.revision || 0) + 1;
+    task.deviceId = getDeviceId();
+  }
   saveProjects();
   saveTasks();
-  if (screen === "board" && activeProjectId === id) showScreen("planner");
+  if (screen === "board" && sameId(activeProjectId, id)) showScreen("planner");
   else renderScreen();
 }
 
@@ -1891,10 +2240,10 @@ function openBoard(projectId) {
 function createTask(projectId, status, title) {
   const now = new Date().toISOString();
   const task = {
-    id: Date.now(), projectId, title, status,
+    id: newId(), projectId, title, status,
     due: "", priority: "med", tags: [], notes: "",
     order: tasksFor(projectId, status).length,
-    created: now, updated: now,
+    created: now, updated: now, revision: 0, baseRevision: 0, deviceId: getDeviceId(),
   };
   plannerTasks.push(task);
   saveTasks();
@@ -1905,6 +2254,9 @@ function updateTask(id, patch) {
   const task = getTask(id);
   if (!task) return;
   Object.assign(task, patch, { updated: new Date().toISOString() });
+  task.baseRevision = task.revision || 0;
+  task.revision = (task.revision || 0) + 1;
+  task.deviceId = getDeviceId();
   saveTasks();
 }
 
@@ -1912,7 +2264,12 @@ function deleteTask(id) {
   const task = getTask(id);
   if (!task) return false;
   if (!confirm(`Delete “${task.title || "Untitled task"}”? This can't be undone.`)) return false;
-  plannerTasks = plannerTasks.filter((t) => t.id !== id);
+  task.tombstone = true;
+  task.deletedAt = new Date().toISOString();
+  task.updated = task.deletedAt;
+  task.baseRevision = task.revision || 0;
+  task.revision = (task.revision || 0) + 1;
+  task.deviceId = getDeviceId();
   saveTasks();
   return true;
 }
@@ -1922,10 +2279,13 @@ function moveTask(id, status, index) {
   const task = getTask(id);
   if (!task) return;
   const fromStatus = task.status;
-  const target = tasksFor(task.projectId, status).filter((t) => t.id !== id);
+  const target = tasksFor(task.projectId, status).filter((t) => !sameId(t.id, id));
   target.splice(Math.max(0, Math.min(index, target.length)), 0, task);
   task.status = status;
   task.updated = new Date().toISOString();
+  task.baseRevision = task.revision || 0;
+  task.revision = (task.revision || 0) + 1;
+  task.deviceId = getDeviceId();
   target.forEach((t, i) => { t.order = i; });
   if (fromStatus !== status) tasksFor(task.projectId, fromStatus).forEach((t, i) => { t.order = i; });
   saveTasks();
@@ -1947,7 +2307,7 @@ function projectRow(project, index) {
   title.textContent = project.name || "Untitled project";
   row.appendChild(title);
 
-  const count = plannerTasks.filter((t) => t.projectId === project.id).length;
+  const count = plannerTasks.filter((t) => !t.tombstone && sameId(t.projectId, project.id)).length;
   const chip = document.createElement("span");
   chip.className = "chip chip-muted";
   chip.textContent = count === 1 ? "1 task" : count + " tasks";
@@ -1966,7 +2326,7 @@ function projectRow(project, index) {
 
 function renderPlanner() {
   projectListEl.innerHTML = "";
-  const list = [...projects].sort((a, b) => (b.updated || "").localeCompare(a.updated || ""));
+  const list = projects.filter((project) => !project.tombstone).sort((a, b) => (b.updated || "").localeCompare(a.updated || ""));
   list.forEach((p, i) => projectListEl.appendChild(projectRow(p, i)));
   plannerEmpty.hidden = list.length > 0;
 }
@@ -1988,10 +2348,12 @@ function taskCard(task) {
   card.className = "kb-card";
   card.dataset.id = task.id;
 
-  const grip = document.createElement("span");
+  const grip = document.createElement("button");
+  grip.type = "button";
   grip.className = "kb-grip";
   grip.textContent = "⠿";
-  grip.title = "Drag to move";
+  grip.title = "Drag or use arrow keys to move";
+  grip.setAttribute("aria-label", `Move ${task.title}. Use left and right for columns; up and down for position.`);
   card.appendChild(grip);
 
   const body = document.createElement("div");
@@ -2085,6 +2447,7 @@ function openTaskDetail(id) {
   renderTaskDetail();
   taskBackdrop.hidden = false;
   taskPop.hidden = false;
+  document.querySelector(".app").inert = true;
   taskTitleInput.focus();
 }
 
@@ -2092,10 +2455,14 @@ function openTaskDetail(id) {
 function closeTaskDetail() {
   if (taskDetailId == null) return true;
   if (taskDraftIsDirty() && !confirm("Discard unsaved changes?")) return false;
+  const closingId = taskDetailId;
   taskDetailId = null;
   taskDraft = null;
   taskBackdrop.hidden = true;
   taskPop.hidden = true;
+  document.querySelector(".app").inert = false;
+  [...document.querySelectorAll(".kb-card")]
+    .find((card) => sameId(card.dataset.id, closingId))?.querySelector(".kb-grip")?.focus();
   return true;
 }
 
@@ -2139,9 +2506,9 @@ projectNameInput.addEventListener("keydown", (e) => {
 
 projectListEl.addEventListener("click", (e) => {
   const del = e.target.closest("[data-del]");
-  if (del) { deleteProject(Number(del.dataset.del)); return; }
+  if (del) { deleteProject(del.dataset.del); return; }
   const row = e.target.closest(".row");
-  if (row) openBoard(Number(row.dataset.id));
+  if (row) openBoard(row.dataset.id);
 });
 
 $("#board-back").addEventListener("click", () => showScreen("planner"));
@@ -2184,7 +2551,7 @@ kbBoard.addEventListener("click", (e) => {
   // its taps are handled in pointerup so a drag never doubles as a click)
   if (e.target.closest(".kb-grip")) return;
   const card = e.target.closest(".kb-card");
-  if (card) openTaskDetail(Number(card.dataset.id));
+  if (card) openTaskDetail(card.dataset.id);
 });
 
 // Task detail events
@@ -2230,6 +2597,7 @@ $("#task-delete").addEventListener("click", () => {
   taskDraft = null;
   taskBackdrop.hidden = true;
   taskPop.hidden = true;
+  document.querySelector(".app").inert = false;
   if (screen === "board") renderBoard();
 });
 taskNotesPreview.addEventListener("click", (e) => {
@@ -2301,7 +2669,7 @@ kbBoard.addEventListener("pointerdown", (e) => {
   const card = grip.closest(".kb-card");
   if (!card) return;
   kbDrag = {
-    id: Number(card.dataset.id), card,
+    id: card.dataset.id, card,
     startX: e.clientX, startY: e.clientY, moved: false, ghost: null,
   };
   // Capture keeps the drag alive when the pointer leaves the grip; the
@@ -2324,7 +2692,7 @@ kbBoard.addEventListener("pointermove", (e) => {
   kbAutoScroll(e);
 });
 
-kbBoard.addEventListener("pointerup", (e) => {
+kbBoard.addEventListener("pointerup", (_e) => {
   if (!kbDrag) return;
   const drag = kbDrag;
   kbDrag = null;
@@ -2349,6 +2717,36 @@ kbBoard.addEventListener("pointercancel", () => {
   kbDrag = null;
   kbEndDrag(drag);
   renderBoard();
+});
+
+kbBoard.addEventListener("keydown", (event) => {
+  const grip = event.target.closest(".kb-grip");
+  if (!grip || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+  const card = grip.closest(".kb-card");
+  const task = getTask(card?.dataset.id);
+  if (!task) return;
+  event.preventDefault();
+  const currentStatus = TASK_STATUSES.indexOf(task.status);
+  let status = task.status;
+  let index = tasksFor(task.projectId, task.status).findIndex((item) => sameId(item.id, task.id));
+  if (event.key === "ArrowLeft") status = TASK_STATUSES[Math.max(0, currentStatus - 1)];
+  if (event.key === "ArrowRight") status = TASK_STATUSES[Math.min(TASK_STATUSES.length - 1, currentStatus + 1)];
+  if (event.key === "ArrowUp") index -= 1;
+  if (event.key === "ArrowDown") index += 1;
+  if (status !== task.status) index = tasksFor(task.projectId, status).length;
+  moveTask(task.id, status, index);
+  renderBoard();
+  [...kbBoard.querySelectorAll(".kb-card")]
+    .find((item) => sameId(item.dataset.id, task.id))?.querySelector(".kb-grip")?.focus();
+});
+
+taskPop.addEventListener("keydown", (event) => {
+  if (event.key !== "Tab") return;
+  const focusable = [...taskPop.querySelectorAll("button:not([disabled]), input:not([disabled]), textarea:not([disabled])")];
+  if (!focusable.length) return;
+  const first = focusable[0], last = focusable.at(-1);
+  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
 });
 
 // ---------- First run: a tiny linked starter web ----------
@@ -2428,8 +2826,8 @@ function buildGraphData() {
   for (const n of notes) {
     for (const t of linksIn(n.body)) {
       const target = findByTitle(t);
-      if (!target || target.id === n.id) continue;
-      const key = Math.min(n.id, target.id) + ":" + Math.max(n.id, target.id);
+      if (!target || sameId(target.id, n.id)) continue;
+      const key = [String(n.id), String(target.id)].sort().join(":");
       if (seen.has(key)) continue;
       seen.add(key);
       const a = index.get(n.id), b = index.get(target.id);
@@ -2538,6 +2936,18 @@ function graphLoop() {
 
 function renderGraph() {
   if (!graphCanvas) return; // stale cached HTML
+  const graphText = $("#graph-text");
+  if (graphText) {
+    graphText.replaceChildren();
+    for (const note of notes) {
+      const targets = linksIn(note.body).filter((title) => findByTitle(title));
+      const item = document.createElement("li");
+      item.textContent = targets.length
+        ? `${note.title} links to ${targets.join(", ")}`
+        : `${note.title} has no outgoing links`;
+      graphText.appendChild(item);
+    }
+  }
   const hasEdges = notes.length > 0;
   graphEmpty.hidden = notes.length > 0;
   graphCanvas.parentElement.hidden = !hasEdges;
@@ -2651,7 +3061,7 @@ function syncAiSummaryPanel(noteId) {
 
 function noteForAi(note) {
   // Image tokens are meaningless to the model — strip them from the payload
-  return { title: note.title, tags: note.tags, body: note.body.replace(/\{\{img:\d+(?::\d+)?\}\}/g, "").trim() };
+  return { title: note.title, tags: note.tags, body: note.body.replace(/\{\{img:[\w-]+(?::\d+)?\}\}/g, "").trim() };
 }
 
 // Ask Saturn used to send EVERY note in full — the model couldn't answer
@@ -2789,6 +3199,7 @@ const versionEl = document.getElementById("app-version");
 if (versionEl) versionEl.textContent = "SATURN " + APP_VERSION.toUpperCase();
 load();
 seedIfEmpty();
+coordinator = new TabCoordinator(handleExternalNotebookChange);
 applyTheme();
 wireFormatting();
 renderAuth();

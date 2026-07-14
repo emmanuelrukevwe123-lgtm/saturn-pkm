@@ -1,5 +1,15 @@
 # Using Saturn 🪐
 
+## Backups and restore
+
+Open **Data & Sync** and choose **Export .saturn backup**. The versioned bundle contains active and deleted notes, projects, tasks, settings, and referenced images. To restore, select the file, choose **Merge** or **Replace**, review the validated summary, and confirm. Invalid or incompatible files make no changes; failed writes roll back.
+
+Titles are unique without regard to capitalization. Saturn adds a deterministic number when creation, restore, import, or sync would collide. Renaming a note also updates matching `[[wiki links]]` in notes and task descriptions.
+
+## Sync and conflicts
+
+The default deployment is local-only. With cloud sync enabled, offline changes remain pending and resume on reconnect. If two devices change the same note or task from the same base revision, Saturn keeps the newer version and creates a uniquely titled conflict copy. Deleted records use 30-day tombstones so an offline device cannot silently restore them. Images remain available offline once cached and appear on other signed-in devices through owner-scoped Storage.
+
 Saturn is a linked-notes app: you write short notes, connect them with
 `[[wiki links]]`, and watch your knowledge web grow. This guide covers every
 feature, screen by screen.

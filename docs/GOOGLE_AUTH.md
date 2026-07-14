@@ -1,9 +1,10 @@
 # Google Sign-In Setup
 
+Authentication alone does not enable cloud sync. The deployment flag stays false until Firestore and Storage exist and the committed owner-only rules are deployed. Synced data lives below `users/{uid}` and images below `users/{uid}/images/{imageId}`. The first enabled sync reads legacy `notes` and `bin` collections once, then uses revisioned notes, projects, tasks, and image metadata.
+
 Saturn supports optional Google sign-in through Firebase Authentication.
 
-Important: this does not add cloud sync by itself. Notes still live in browser
-localStorage. When a user signs in, Saturn stores that browser's notes under a
+By default notes still live in browser localStorage. When a user signs in, Saturn stores that browser's notes under a
 Google-user-specific localStorage key. Deleted notes use a matching
 Google-scoped bin key. On first sign-in, the existing local notes and bin are
 copied into that Google-scoped notebook.
