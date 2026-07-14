@@ -453,6 +453,13 @@ body.nav-open .menu-toggle span:nth-child(3) { transform: translateY(-6px) rotat
 .ask-form .field { flex: 1; min-width: 0; }
 .ask-form .pill { padding: 12px 22px; font-size: 14px; }
 
+/* Dark mode: Ask Saturn text in pure white for legibility (user request) */
+body.dark .ask-pop { color: #FFFFFF; }
+body.dark .ask-pop .list-heading { color: #FFFFFF; }
+body.dark .ask-pop .field { color: #FFFFFF; }
+body.dark .ask-pop .field::placeholder { color: rgba(255, 255, 255, 0.55); }
+body.dark .ask-pop .ai-panel-body { color: #FFFFFF; }
+
 .ai-panel {
   background: var(--surface); border: 1px solid var(--line); border-radius: 18px;
   padding: 20px 24px; margin: 18px 0; animation: riseIn .3s ease both;
@@ -614,6 +621,48 @@ body.nav-open .menu-toggle span:nth-child(3) { transform: translateY(-6px) rotat
   content: attr(data-placeholder);
   color: var(--muted); opacity: 0.65; font-style: italic;
   pointer-events: none;
+}
+
+/* Note images ({{img:ID}} tokens, blobs in IndexedDB) */
+.note-img {
+  display: block; max-width: 100%; max-height: 480px;
+  border-radius: 12px; border: 1px solid var(--line);
+  margin: 12px 0;
+}
+.img-missing {
+  display: inline-block; border: 1.5px dashed var(--line); border-radius: 8px;
+  color: var(--muted); font-size: 12px; font-style: italic;
+  padding: 4px 10px; margin: 2px 0;
+}
+.note-img.img-selected { outline: 2px solid var(--accent); outline-offset: 2px; }
+.img-size-pop[hidden] { display: none; } /* display:flex would defeat the hidden attribute */
+.img-size-pop {
+  position: fixed; z-index: 92; display: flex; gap: 6px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
+  padding: 6px 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  animation: riseIn .15s ease both;
+}
+.img-size-pop .pill { padding: 5px 12px; font-size: 12px; }
+
+/* Edge-drag resize handles on the selected image */
+.img-handle[hidden] { display: none; }
+.img-handle {
+  position: fixed; z-index: 93;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--accent); border: 2px solid var(--surface);
+  padding: 0; cursor: ew-resize; touch-action: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+.img-handle-corner { cursor: nwse-resize; }
+@media (pointer: coarse) {
+  .img-handle { width: 20px; height: 20px; }
+}
+.img-size-label[hidden] { display: none; }
+.img-size-label {
+  position: fixed; z-index: 93;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
+  color: var(--ink); font-size: 12px; font-weight: 700;
+  padding: 3px 10px; pointer-events: none;
 }
 
 .app-version {

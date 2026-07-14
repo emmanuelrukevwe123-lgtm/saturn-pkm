@@ -12,7 +12,9 @@ feature, screen by screen.
 |---|---|
 | **Notes** | The home screen — your note list, search, and tag filters |
 | **Tags** | Notes grouped by tag, each group with its own "how linked" ring |
+| **Graph** | Your knowledge web as a map — notes are stars, links are threads |
 | **Progress** | Stats: % linked, total links, orphans, per-tag breakdown |
+| **Planner** | Kanban project boards — plan work in To do / In progress / Done columns |
 | **Bin** | Deleted notes, shown as dead stars you can restore or remove forever |
 | **＋ New note** | Opens the "Add a note" form |
 | **Sign in with Google** | Optional Google login, if Firebase has been configured |
@@ -74,9 +76,23 @@ buttons above the note body to format:
 | H | Turn the current line into a heading (tap again to undo) |
 | • List | Turn the current line(s) into a bulleted list |
 | [[ link ]] | Turn the selected text into a link to another note (or ask for a title) |
+| 🖼 Image | Add a picture to the note (you can also paste or drop one straight in) |
 
 (Under the hood notes are still saved in a portable plain-text format, so
 older notes and anything you paste keep working.)
+
+### Images
+
+Pictures are compressed automatically and stored **on the device you added
+them from** — they don't count against your note storage, but they also
+don't travel: opening the same note in another browser shows an "image not
+on this device" placeholder instead (your text is never affected). Deleting
+a note (and emptying it from the bin) cleans its images up automatically.
+
+**Resizing:** tap an image in the editor and either pick a preset size
+(25%, 50%, 75%, Full) or **drag the round handles on its right edge** to
+any size you like — a badge shows the width while you drag. The choice is
+saved with the note.
 
 ## Linking notes — the heart of Saturn
 
@@ -100,6 +116,27 @@ every `[[link]]` a thread between two stars. Bigger stars have more
 connections; unconnected notes drift alone. Drag stars to rearrange the
 map, and tap any star to open that note.
 
+## Planner — kanban boards
+
+The **Planner** screen holds your projects. Name a project and press
+**Create** to open its board: three columns — **To do**, **In progress**,
+**Done**.
+
+- **＋ Add task** at the bottom of a column: type a title, press Enter
+  (Esc cancels).
+- **Move a task**: drag its ⠿ grip between or within columns — works with
+  mouse and touch. On a phone, the board swipes one column at a time.
+- **Open a task**: tap anywhere else on the card. The task panel lets you
+  set status, a due date (overdue dates highlight on the card), priority
+  (low / medium / high), tags, and notes. Task notes support
+  `[[wiki links]]` — the preview links jump straight to your Saturn notes.
+  Changes apply when you press **Save task**.
+- **Rename a project** by editing the board title; **Delete project**
+  removes it and its tasks (with a confirmation).
+
+Planner data lives in the same place as your notes (this browser,
+per-account when signed in).
+
 ## Finding notes
 
 - **Search** (Notes screen) — live-filters by title *and* body text.
@@ -114,9 +151,11 @@ Both features need Google sign-in (and the server AI setup in `AI.md`):
 - **✦ Summarize** — on the note toolbar. Streams an AI summary into a panel
   below the note; **Insert into note** appends it as an `## AI summary`
   section (click **Save changes** to keep it).
-- **Ask Saturn** — on the Notes screen. Type a question and press **Ask**;
-  the answer is drawn only from your notes and references `[[Note titles]]`
-  it used. Signed-out visitors see the buttons disabled.
+- **Ask Saturn** — the floating ✦ button (bottom-right). Type a question and
+  press **Ask**; the answer is drawn only from your notes and references
+  `[[Note titles]]` it used. To keep answers fast, Saturn sends the 12 notes
+  most relevant to your question (matched by title, tags, and text) rather
+  than your whole knowledge base. Signed-out visitors see the buttons disabled.
 
 ## Progress screen
 

@@ -28,7 +28,11 @@ Browser ◀──────────────(plain text stream)──�
   never shipped to the browser.
 - Your notes are sent to Google's Gemini API for the duration of the request;
   nothing is stored server-side.
-- Very large knowledge bases are capped at ~500KB per request.
+- **Ask Saturn sends a trimmed payload for speed**: the 12 notes most relevant
+  to the question (scored by title/tag/body term matches; vague questions fall
+  back to the 12 most recent), bodies capped at 1,500 characters, image tokens
+  stripped. Summarize sends just the one note.
+- Very large requests are capped at ~500KB as a final guard.
 
 ## Setup
 
@@ -59,3 +63,9 @@ Browser ◀──────────────(plain text stream)──�
 
 `gemini-3.5-flash` — the current stable free-tier Flash model (set in
 `api/ai.js` as `GEMINI_MODEL` if you want to change it).
+
+**Upgrading**: pointing `GEMINI_MODEL` at a Pro-tier model (e.g.
+`gemini-3.5-pro`) gives better answers but is slower to start responding and
+has a much smaller free-tier quota — expect "quota used up" errors sooner,
+especially with multiple signed-in users. Flash is the right default for
+answering questions over your own notes.

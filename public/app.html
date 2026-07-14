@@ -11,7 +11,7 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Baloo+2:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Quicksand:wght@400;500;600;700&display=swap"
     rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=13">
+  <link rel="stylesheet" href="style.css?v=14">
 </head>
 
 <body>
@@ -139,7 +139,20 @@
             <button id="fmt-heading" class="pill fmt" type="button" title="Heading">H</button>
             <button id="fmt-list" class="pill fmt" type="button" title="Bulleted list">• List</button>
             <button id="fmt-link" class="pill fmt" type="button" title="Link to another note">[[ link ]]</button>
+            <button id="fmt-img" class="pill fmt" type="button" title="Insert an image">🖼 Image</button>
           </div>
+          <input id="img-input" type="file" accept="image/*" hidden>
+          <div id="img-size-pop" class="img-size-pop" hidden>
+            <button class="pill" type="button" data-w="25">25%</button>
+            <button class="pill" type="button" data-w="50">50%</button>
+            <button class="pill" type="button" data-w="75">75%</button>
+            <button class="pill" type="button" data-w="100">Full</button>
+          </div>
+          <button id="img-handle-r" class="img-handle" type="button" hidden
+            aria-label="Drag to resize image"></button>
+          <button id="img-handle-c" class="img-handle img-handle-corner" type="button" hidden
+            aria-label="Drag to resize image"></button>
+          <span id="img-size-label" class="img-size-label" hidden></span>
 
           <div id="rendered-body" class="note-card rendered rich-editor" contenteditable="true"
             data-placeholder="Start writing… use the buttons above to format, and [[ link ]] to connect notes."></div>
@@ -369,8 +382,8 @@
     </div>
   </div>
 
-  <script src="firebase-config.js?v=13"></script>
-  <script src="script.js?v=13"></script>
+  <script src="firebase-config.js?v=14"></script>
+  <script src="script.js?v=14"></script>
 </body>
 
 </html>

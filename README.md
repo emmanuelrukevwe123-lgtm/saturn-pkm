@@ -4,13 +4,16 @@
 
 A **personal knowledge management** app (Zettelkasten-style linked notes) built with
 plain HTML, CSS, and JavaScript — no frameworks, no build step, no server.
-Notes are written in Markdown, link to each other with `[[Note title]]`, show
-backlinks automatically, move deleted notes into a recoverable Dead Stars bin,
-and are stored in your browser's localStorage.
+Notes link to each other with `[[Note title]]`, show backlinks automatically,
+render as a live **Graph**, and can hold **images** (compressed, stored in
+IndexedDB, resizable by dragging). A **Planner** adds kanban project boards
+with drag-and-drop tasks that link back to notes. Deleted notes rest in a
+recoverable Dead Stars bin. Everything is stored in your browser.
 
-The UI is a faithful clone of the Saturn design export (`design/Saturn.html`):
-monochrome light + dark themes, Baloo 2 / Quicksand type, progress rings, and
-ledger-style lists.
+The UI is the Saturn design export's layout (`design/Saturn.html`) in a retro
+**"Mission Control '72"** palette — cream paper, brown-teal ink, burnt-orange
+accents, a slatted sun in light mode and a starfield in dark. Baloo 2 /
+Quicksand type, progress rings, ledger-style lists.
 
 ## Project structure
 
@@ -54,7 +57,7 @@ as a plain static site.
 
 ## Docs
 
-- **[How to use Saturn](docs/USAGE.md)** — notes, Markdown, wiki links, backlinks, tags, themes
+- **[How to use Saturn](docs/USAGE.md)** — notes, wiki links, backlinks, tags, images, the Graph, the Planner, themes
 - **[AI features](docs/AI.md)** — ✦ Summarize + Ask Saturn (free Gemini API, requires sign-in)
 - **[Google sign-in setup](docs/GOOGLE_AUTH.md)** — optional Firebase Authentication setup
 - **[Deploying to Vercel](docs/DEPLOY.md)**
@@ -62,7 +65,9 @@ as a plain static site.
 ## A note about your data
 
 Notes live entirely in **your browser's localStorage**. Signed-out notes use
-the key `saturn-pkm-notes`, deleted notes use `saturn-pkm-deleted-notes`, and
-signed-in notes use Google-user-specific keys. Nothing is uploaded anywhere —
-which also means notes don't sync between browsers or devices, and clearing
-site data deletes them.
+the key `saturn-pkm-notes`, deleted notes use `saturn-pkm-deleted-notes`,
+planner data uses `saturn-pkm-planner-*`, and signed-in data uses
+Google-user-specific keys. Images are stored as compressed blobs in the
+browser's IndexedDB (`saturn-pkm-images`) and are cleaned up automatically
+when nothing references them. Nothing is uploaded anywhere — which also means
+data doesn't sync between browsers or devices, and clearing site data deletes it.

@@ -234,6 +234,47 @@ summaries + "Ask Saturn" Q&A over the user's notes).
   zero console errors; screenshots reviewed in both modes for app (home/board/graph)
   and landing.
 
+- **2026-07-14** — **Images in notes** (user request, v14). Blobs live in IndexedDB
+  (`saturn-pkm-images` DB) — never localStorage, which base64 would fill after a few
+  photos. Note text carries only a `{{img:ID}}` token (curly braces so `linksIn`'s
+  `[[...]]` scanner never sees it); `renderMarkdown` swaps tokens for `<img>` via a
+  boot-loaded object-URL cache (`imgURLs`), `domToMarkdown` converts back, and a blob
+  missing on this device renders an atomic placeholder span that still round-trips its
+  token. Insert via 🖼 toolbar button, paste, or drop; files are downscaled to ≤1400px
+  and re-encoded JPEG q0.82 (~100-250KB) on a canvas before storing. Boot GC purges
+  blobs referenced by no notebook on the browser (scans ALL `saturn-pkm-notes*`/
+  `saturn-pkm-deleted-notes*` keys so other accounts' images survive; 24h grace for
+  fresh uploads). `noteForAi` strips tokens from AI payloads. ⚠️ Images are per-device:
+  when cloud sync returns, bodies sync with tokens but blobs won't follow — that needs
+  Firebase Storage. Verified: 24/24 image e2e checks (insert/compress/persist/round-trip/
+  paste/GC/placeholder), 55/55 planner e2e, 19/19 logic, zero console errors.
+
+- **2026-07-14** — **Image resize + faster Ask Saturn + white dark-mode ask text**
+  (user requests, still v14). Resize: tapping an editor image opens a floating pill
+  popover (25/50/75/Full); the width rides the token as `{{img:ID:WIDTH}}` (plain
+  `{{img:ID}}` = full) — renderMarkdown/domToMarkdown/GC/AI-strip all handle the
+  optional suffix. Two gotchas fixed: `display:flex` on the popover silently defeated
+  the `hidden` attribute (needs a `[hidden]{display:none}` override), and clicking a
+  tall image makes contenteditable auto-scroll, so the popover *follows* the image on
+  scroll instead of closing. AI speed: Ask Saturn no longer sends every note in full —
+  `relevantNotesFor(question)` ranks notes by term matches (title 6 / tag 4 / body 2),
+  sends top 12 with bodies capped at 1500 chars (vague questions fall back to the 12
+  most recent); test corpus payload shrank 114,861 → 229 chars, so the model starts
+  streaming almost immediately. Trade-off: answers now consider the 12 most relevant
+  notes, not the whole base. Dark mode: Ask Saturn popover text (heading, input,
+  placeholder, answer) forced to pure white. Verified: 22/22 new e2e checks + full
+  regression (24/24 images, 55/55 planner, 19/19 logic), zero console errors.
+
+- **2026-07-14** — **Edge-drag image resizing** (user request, still v14): selecting an
+  image now also shows two orange drag handles (right-edge midpoint + bottom-right
+  corner, `#img-handle-r`/`#img-handle-c`) alongside the preset pills. Dragging
+  live-resizes with a floating percent badge (`#img-size-label`) and saves any integer
+  width 10–100 into the same `{{img:ID:WIDTH}}` token on release (100 drops the
+  suffix) — zero storage changes; renderMarkdown/domToMarkdown/GC already accept
+  arbitrary widths. Pointer-capture pattern from the kanban grip; handles are 20px on
+  coarse pointers; `[hidden]{display:none}` overrides guard against the display-vs-
+  hidden CSS trap found earlier today.
+
 ## Features shipped
 - Two-pane Saturn-styled UI (monochrome light + dark themes, Baloo 2 + Quicksand, 252px sidebar)
 - **Mobile responsive** — sidebar collapses to a wrapping top bar under 880px
@@ -244,7 +285,8 @@ summaries + "Ask Saturn" Q&A over the user's notes).
 - **Google sign-in** through Firebase Authentication (per-account local notebooks; email never displayed;
   mobile-friendly redirect flow served through our own domain)
 - localStorage persistence (`saturn-pkm-notes`, per-user `saturn-pkm-notes:<uid>` when signed in)
-- Always-styled rich editor with formatting buttons (B / I / H / • List / [[ link ]]) — no visible Markdown; portable text format under the hood
+- Always-styled rich editor with formatting buttons (B / I / H / • List / [[ link ]] / 🖼 Image) — no visible Markdown; portable text format under the hood
+- **Images in notes** — insert, paste, or drop; auto-compressed, stored in IndexedDB on the device, referenced from note text by lightweight tokens
 - `[[Wiki links]]` — clickable; missing targets render dashed, click-to-create
 - Backlinks panel ("Linked from") per note
 - **Graph screen** — force-directed map: notes as stars sized by connections, links as threads,

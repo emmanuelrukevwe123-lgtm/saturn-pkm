@@ -7,7 +7,7 @@
    Saturn design export's Today / Topics / Progress / Add views.
    ============================================================ */
 
-const APP_VERSION = "v13";
+const APP_VERSION = "v14";
 // Cloud sync is parked: the Firestore (default) database doesn't exist in the
 // project yet. All sync code below stays dormant behind this flag — to bring
 // it back, create the database (docs/GOOGLE_AUTH.md §5) and flip to true.
@@ -340,6 +340,110 @@ function escapeHTML(str) {
     .replaceAll('"', "&quot;");
 }
 
+// ---------- Note images ----------
+// Photos would blow localStorage's ~5MB quota as base64, so blobs live in
+// IndexedDB (big quota) and note text carries only a {{img:ID}} token —
+// curly braces so the [[wiki link]] scanner never mistakes one for a link.
+// Blobs are local to this browser: when cloud sync returns, bodies will
+// sync with tokens but images stay on the device that added them.
+const IMG_DB_NAME = "saturn-pkm-images";
+let imgDB = null;
+const imgURLs = new Map(); // image id -> object URL, filled at boot
+
+function openImageDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IMG_DB_NAME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore("images", { keyPath: "id" });
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function idbPutImage(record) {
+  return new Promise((resolve, reject) => {
+    const tx = imgDB.transaction("images", "readwrite");
+    tx.objectStore("images").put(record);
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+function idbAllImages() {
+  return new Promise((resolve, reject) => {
+    const req = imgDB.transaction("images").objectStore("images").getAll();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function idbDeleteImage(id) {
+  return new Promise((resolve, reject) => {
+    const tx = imgDB.transaction("images", "readwrite");
+    tx.objectStore("images").delete(id);
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+// Downscale + re-encode before storing (a phone photo → ~100-250KB JPEG)
+function compressImage(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const MAX = 1400;
+      const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+      const width = Math.max(1, Math.round(img.width * scale));
+      const height = Math.max(1, Math.round(img.height * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#FFFFFF"; // JPEG has no alpha channel
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(img, 0, 0, width, height);
+      canvas.toBlob(
+        (blob) => (blob ? resolve(blob) : reject(new Error("could not encode image"))),
+        "image/jpeg", 0.82
+      );
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("that file isn't an image")); };
+    img.src = url;
+  });
+}
+
+// Every {{img:ID}} mentioned by any notebook on this browser (active notes
+// and bins of every account) — scanned from the raw stored JSON so we never
+// garbage-collect an image another account's notes still use.
+function referencedImageIds() {
+  const ids = new Set();
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (!key.startsWith(STORAGE_KEY) && !key.startsWith(TRASH_KEY)) continue;
+    const raw = localStorage.getItem(key) || "";
+    for (const m of raw.matchAll(/\{\{img:(\d+)(?::\d+)?\}\}/g)) ids.add(Number(m[1]));
+  }
+  return ids;
+}
+
+async function initImages() {
+  imgDB = await openImageDB();
+  const records = await idbAllImages();
+  const referenced = referencedImageIds();
+  const dayAgo = Date.now() - 86400000;
+  for (const rec of records) {
+    // Purge blobs no note mentions anymore — but give fresh uploads a day's
+    // grace so an image sitting in an unsaved draft in another tab survives.
+    if (!referenced.has(rec.id) && Date.parse(rec.created || "") < dayAgo) {
+      await idbDeleteImage(rec.id);
+      continue;
+    }
+    imgURLs.set(rec.id, URL.createObjectURL(rec.blob));
+  }
+  renderScreen(); // notes rendered before the cache filled get their images
+}
+
 // ---------- Markdown (tiny hand-rolled subset) ----------
 // Escapes HTML first, then applies rules — order matters.
 function renderMarkdown(src) {
@@ -349,6 +453,17 @@ function renderMarkdown(src) {
 
   const inline = (text) =>
     text
+      // {{img:ID}} or {{img:ID:WIDTH%}} — stored in IndexedDB; keep the token
+      // (atomic span) when the blob isn't on this device so an edit round-trip
+      // can't drop it
+      .replace(/\{\{img:(\d+)(?::(\d+))?\}\}/g, (_, id, w) => {
+        const url = imgURLs.get(Number(id));
+        const width = w ? Math.min(100, Math.max(10, Number(w))) : 100;
+        const wAttrs = width !== 100 ? ` data-w="${width}"` : "";
+        return url
+          ? `<img class="note-img" src="${url}" data-img="${id}"${wAttrs}${width !== 100 ? ` style="width:${width}%"` : ""}>`
+          : `<span class="img-missing" contenteditable="false" data-img="${id}"${wAttrs}>image not on this device</span>`;
+      })
       // [[wiki links]] — existing notes vs missing "ghost" links
       .replace(/\[\[([^\[\]]+)\]\]/g, (_, title) => {
         const target = findByTitle(title);
@@ -388,6 +503,11 @@ function renderMarkdown(src) {
 // the graph, AI, and old notes keep working) — but the user only ever sees
 // styled text in a contenteditable surface. domToMarkdown converts the
 // editor's DOM back to the storage format on every keystroke.
+// An editor image/placeholder back to its storage token (width kept if resized)
+function imgToken(el) {
+  return "{{img:" + el.dataset.img + (el.dataset.w ? ":" + el.dataset.w : "") + "}}";
+}
+
 function domToMarkdown(root) {
   const inline = (node) => {
     let text = "";
@@ -396,6 +516,10 @@ function domToMarkdown(root) {
       if (child.nodeType !== Node.ELEMENT_NODE) continue;
       const tag = child.tagName;
       if (tag === "BR") { text += "\n"; continue; }
+      // Stored images (and their not-on-this-device placeholders) round-trip
+      // as tokens; pasted-in foreign <img> tags have no data-img and drop out
+      if (child.dataset.img) { text += imgToken(child); continue; }
+      if (tag === "IMG") continue;
       const inner = inline(child);
       if (child.classList.contains("wiki-link")) {
         text += "[[" + (child.dataset.link || inner).trim() + "]]";
@@ -421,6 +545,8 @@ function domToMarkdown(root) {
       }
       if (child.nodeType !== Node.ELEMENT_NODE) continue;
       const tag = child.tagName;
+      // An image dropped directly at the editor root (outside any <p>)
+      if (child.dataset.img) { out.push(imgToken(child), ""); continue; }
       if (tag === "H1" || tag === "H2" || tag === "H3") {
         out.push("#".repeat(Number(tag[1])) + " " + inline(child).trim(), "");
       } else if (tag === "UL" || tag === "OL") {
@@ -1424,6 +1550,215 @@ renderedBody.addEventListener("input", () => {
   updateSaveState();
 });
 
+// ---------- Image insertion (toolbar button + paste) ----------
+// The file dialog steals focus, so the caret position is captured on the
+// button press and restored right before the image is inserted.
+let imgInsertRange = null;
+const imgInput = $("#img-input");
+const fmtImgBtn = $("#fmt-img");
+
+function captureEditorRange() {
+  const sel = window.getSelection();
+  imgInsertRange =
+    sel && sel.rangeCount && renderedBody.contains(sel.anchorNode)
+      ? sel.getRangeAt(0).cloneRange()
+      : null;
+}
+
+async function insertImageFile(file) {
+  if (!getNote(selectedId)) return;
+  try {
+    const blob = await compressImage(file);
+    const id = Date.now();
+    await idbPutImage({ id, blob, created: new Date().toISOString() });
+    imgURLs.set(id, URL.createObjectURL(blob));
+    renderedBody.focus();
+    if (imgInsertRange) {
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(imgInsertRange);
+      imgInsertRange = null;
+    }
+    // execCommand fires "input" on the editor, so the draft picks it up
+    document.execCommand(
+      "insertHTML", false,
+      `<img class="note-img" src="${imgURLs.get(id)}" data-img="${id}">`
+    );
+  } catch (err) {
+    reportAppError("image: " + ((err && err.message) || err));
+  }
+}
+
+fmtImgBtn?.addEventListener("mousedown", (e) => e.preventDefault()); // keep selection
+fmtImgBtn?.addEventListener("click", () => {
+  captureEditorRange();
+  imgInput.click();
+});
+
+imgInput?.addEventListener("change", () => {
+  const file = imgInput.files && imgInput.files[0];
+  imgInput.value = ""; // same file can be picked again later
+  if (file) insertImageFile(file);
+});
+
+// Pasting or dropping a picture straight into the editor also stores it
+renderedBody.addEventListener("paste", (e) => {
+  const file = [...(e.clipboardData?.files || [])].find((f) => f.type.startsWith("image/"));
+  if (!file) return;
+  e.preventDefault();
+  captureEditorRange();
+  insertImageFile(file);
+});
+
+renderedBody.addEventListener("drop", (e) => {
+  const file = [...(e.dataTransfer?.files || [])].find((f) => f.type.startsWith("image/"));
+  if (!file) return;
+  e.preventDefault();
+  imgInsertRange = null; // drop point is unreliable; append at caret/start
+  insertImageFile(file);
+});
+
+// ---------- Image resizing ----------
+// Tapping an image in the editor opens a size popover (25/50/75/Full) plus
+// drag handles on the image's right edge and corner for free-form resizing.
+// The chosen width rides the storage token as {{img:ID:WIDTH}}.
+const imgSizePop = $("#img-size-pop");
+const imgHandleR = $("#img-handle-r");
+const imgHandleC = $("#img-handle-c");
+const imgSizeLabel = $("#img-size-label");
+let sizeTarget = null; // the <img> being resized
+let imgDrag = null;    // { startX, startWidthPx, editorWidthPx }
+
+function refreshSizePills() {
+  const current = sizeTarget?.dataset.w || "100";
+  for (const pill of imgSizePop.querySelectorAll(".pill"))
+    pill.classList.toggle("active", pill.dataset.w === current);
+}
+
+function positionImgSizePop() {
+  const rect = sizeTarget.getBoundingClientRect();
+  if (rect.bottom < 0 || rect.top > window.innerHeight) { closeImgSizePop(); return; }
+  const popH = imgSizePop.offsetHeight || 40;
+  imgSizePop.style.left = Math.max(10, rect.left + 8) + "px";
+  imgSizePop.style.top = Math.max(10, rect.top - popH - 8) + "px";
+  // Handles ride the right edge: midpoint + bottom corner
+  const hr = imgHandleR.offsetWidth || 14;
+  imgHandleR.style.left = (rect.right - hr / 2) + "px";
+  imgHandleR.style.top = (rect.top + rect.height / 2 - hr / 2) + "px";
+  imgHandleC.style.left = (rect.right - hr / 2) + "px";
+  imgHandleC.style.top = (rect.bottom - hr / 2) + "px";
+  imgSizeLabel.style.left = (rect.right + 10) + "px";
+  imgSizeLabel.style.top = (rect.top + rect.height / 2 - 12) + "px";
+}
+
+function openImgSizePop(img) {
+  closeImgSizePop();
+  sizeTarget = img;
+  img.classList.add("img-selected");
+  refreshSizePills();
+  imgSizePop.hidden = false;
+  imgHandleR.hidden = false;
+  imgHandleC.hidden = false;
+  positionImgSizePop();
+}
+
+function closeImgSizePop() {
+  if (sizeTarget) sizeTarget.classList.remove("img-selected");
+  sizeTarget = null;
+  imgDrag = null;
+  imgSizePop.hidden = true;
+  imgHandleR.hidden = true;
+  imgHandleC.hidden = true;
+  imgSizeLabel.hidden = true;
+}
+
+// Apply a width percent to the selected image (100 = natural full width)
+function applyImgWidth(pct) {
+  if (pct === 100) {
+    delete sizeTarget.dataset.w;
+    sizeTarget.style.width = "";
+  } else {
+    sizeTarget.dataset.w = pct;
+    sizeTarget.style.width = pct + "%";
+  }
+}
+
+// --- Edge-drag resizing (same pointer-capture pattern as the kanban grip) ---
+function editorContentWidth() {
+  const cs = getComputedStyle(renderedBody);
+  return renderedBody.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+}
+
+function imgDragPct(e) {
+  const px = imgDrag.startWidthPx + (e.clientX - imgDrag.startX);
+  return Math.min(100, Math.max(10, Math.round((px / imgDrag.editorWidthPx) * 100)));
+}
+
+function startImgDrag(e) {
+  if (!sizeTarget) return;
+  imgDrag = {
+    startX: e.clientX,
+    startWidthPx: sizeTarget.getBoundingClientRect().width,
+    editorWidthPx: editorContentWidth(),
+  };
+  try { e.target.setPointerCapture(e.pointerId); } catch { /* no active pointer */ }
+  e.preventDefault();
+}
+
+function moveImgDrag(e) {
+  if (!imgDrag || !sizeTarget) return;
+  const pct = imgDragPct(e);
+  sizeTarget.style.width = pct + "%";
+  imgSizeLabel.textContent = pct + "%";
+  imgSizeLabel.hidden = false;
+  positionImgSizePop();
+}
+
+function endImgDrag(e) {
+  if (!imgDrag || !sizeTarget) return;
+  const pct = imgDragPct(e);
+  imgDrag = null;
+  applyImgWidth(pct);
+  refreshSizePills();
+  imgSizeLabel.hidden = true;
+  positionImgSizePop();
+  // The editor's DOM changed without a keystroke — sync the draft
+  renderedBody.dispatchEvent(new Event("input"));
+}
+
+for (const handle of [imgHandleR, imgHandleC]) {
+  handle.addEventListener("pointerdown", startImgDrag);
+  handle.addEventListener("pointermove", moveImgDrag);
+  handle.addEventListener("pointerup", endImgDrag);
+  handle.addEventListener("pointercancel", endImgDrag);
+}
+
+renderedBody.addEventListener("click", (e) => {
+  const img = e.target.closest("img.note-img");
+  if (img) openImgSizePop(img);
+});
+
+imgSizePop.addEventListener("click", (e) => {
+  const pill = e.target.closest(".pill");
+  if (!pill || !sizeTarget) return;
+  applyImgWidth(Number(pill.dataset.w));
+  closeImgSizePop();
+  // The editor's DOM changed without a keystroke — sync the draft
+  renderedBody.dispatchEvent(new Event("input"));
+});
+
+// Close on outside taps; FOLLOW the image on scroll (clicking a tall image
+// makes contenteditable auto-scroll the selection into view — closing here
+// would dismiss the popover the instant it opened)
+document.addEventListener("pointerdown", (e) => {
+  if (sizeTarget && !e.target.closest("#img-size-pop") &&
+      !e.target.closest("img.note-img") && !e.target.closest(".img-handle"))
+    closeImgSizePop();
+});
+document.querySelector(".main").addEventListener("scroll", () => {
+  if (sizeTarget) positionImgSizePop();
+});
+
 // Wiki links inside rendered markdown: open or create the target note.
 // Shared by the note editor and the planner's task-notes preview.
 function handleWikiLinkClick(link) {
@@ -2315,7 +2650,38 @@ function syncAiSummaryPanel(noteId) {
 }
 
 function noteForAi(note) {
-  return { title: note.title, tags: note.tags, body: note.body };
+  // Image tokens are meaningless to the model — strip them from the payload
+  return { title: note.title, tags: note.tags, body: note.body.replace(/\{\{img:\d+(?::\d+)?\}\}/g, "").trim() };
+}
+
+// Ask Saturn used to send EVERY note in full — the model couldn't answer
+// until it had read the whole knowledge base. Rank notes against the
+// question and cap the payload so the first word arrives much sooner.
+const ASK_MAX_NOTES = 12;
+const ASK_MAX_BODY_CHARS = 1500;
+
+function relevantNotesFor(question) {
+  const terms = [...new Set(question.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length > 2))];
+  const scored = notes.map((note) => {
+    const title = note.title.toLowerCase();
+    const body = note.body.toLowerCase();
+    let score = 0;
+    for (const t of terms) {
+      if (title.includes(t)) score += 6;
+      if (note.tags.some((tag) => tag.includes(t))) score += 4;
+      if (body.includes(t)) score += 2;
+    }
+    return { note, score };
+  });
+  const hits = scored.filter((s) => s.score > 0).sort((a, b) => b.score - a.score);
+  // Vague question with no term matches: fall back to the most recent notes
+  const picked = hits.length
+    ? hits.map((s) => s.note)
+    : [...notes].sort((a, b) => (b.updated || "").localeCompare(a.updated || ""));
+  return picked.slice(0, ASK_MAX_NOTES).map((note) => {
+    const slim = noteForAi(note);
+    return { ...slim, body: slim.body.slice(0, ASK_MAX_BODY_CHARS) };
+  });
 }
 
 async function streamAI(payload, bodyEl) {
@@ -2405,6 +2771,7 @@ askFab?.addEventListener("click", () => {
 
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
+  if (sizeTarget) { closeImgSizePop(); return; }
   if (!taskPop.hidden) { closeTaskDetail(); return; }
   askPop.hidden = true;
   if (mobileNav.matches) setNav(false);
@@ -2414,7 +2781,7 @@ askForm.addEventListener("submit", (e) => {
   e.preventDefault();
   const question = askInput.value.trim();
   if (!question) return;
-  runAI({ mode: "ask", question, notes: notes.map(noteForAi) }, askPanel, askBody);
+  runAI({ mode: "ask", question, notes: relevantNotesFor(question) }, askPanel, askBody);
 });
 
 // ---------- Boot ----------
@@ -2426,4 +2793,7 @@ applyTheme();
 wireFormatting();
 renderAuth();
 showScreen("home");
+// Images load after first paint; failure just means tokens render as
+// placeholders — never block the app on IndexedDB.
+initImages().catch(() => {});
 initGoogleAuth();
