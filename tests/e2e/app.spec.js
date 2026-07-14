@@ -35,6 +35,10 @@ test("task dialog is labelled and keyboard-contained", async ({ page }) => {
 });
 
 test("has no serious or critical automated accessibility violations", async ({ page }) => {
+  // Axe computes contrast from mid-animation opacity, so entrance fades made
+  // this flaky; the app honors reduced motion, which makes the scan stable.
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.reload();
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations.filter((violation) => ["serious", "critical"].includes(violation.impact))).toEqual([]);
 });

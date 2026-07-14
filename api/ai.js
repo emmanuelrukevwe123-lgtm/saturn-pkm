@@ -180,11 +180,17 @@ export default async function handler(req, res) {
 
   if (!upstream.ok) {
     clearTimeout(timeout);
+    // Surface WHY Gemini rejected the call: status in the client message,
+    // a truncated error snippet in the function logs (never note content —
+    // Gemini error bodies describe the request problem, not the prompt).
+    let snippet = "";
+    try { snippet = (await upstream.text()).slice(0, 300); } catch { /* opaque */ }
+    console.error(`Gemini rejected the request: HTTP ${upstream.status} ${snippet}`);
     const status = upstream.status === 429 ? 429 : 502;
     res.status(status).json({
       error: status === 429
         ? "The free AI quota is used up for now — try again later."
-        : "The AI service returned an error. Try again in a moment.",
+        : `The AI service returned an error (HTTP ${upstream.status}). Try again in a moment.`,
     });
     return;
   }

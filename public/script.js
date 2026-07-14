@@ -722,7 +722,47 @@ function showScreen(name) {
       b.dataset.screen === (name === "note" ? "home" : name === "board" ? "planner" : name))
   );
   renderScreen();
+  saveUIState();
   return true;
+}
+
+// ---------- Refresh survival ----------
+// A refresh used to always land back on Notes. The current screen (and the
+// open note/board) is remembered per tab so a reload puts the user back
+// where they were. Keyed to the signed-in uid: after the async sign-in
+// notebook swap, the restore runs again against the right notebook.
+const UI_STATE_KEY = "saturn-pkm-ui";
+
+function saveUIState() {
+  // While Google auth is still resolving after a refresh, the boot render
+  // must not overwrite the state we're about to restore for the signed-in
+  // notebook (the swap arrives asynchronously ~a second after boot).
+  if (authStatus === "checking" || authStatus === "loading") return;
+  try {
+    sessionStorage.setItem(UI_STATE_KEY, JSON.stringify({
+      uid: currentUser?.uid || "",
+      screen,
+      selectedId,
+      activeProjectId,
+    }));
+  } catch { /* storage unavailable (private mode) — refresh just lands home */ }
+}
+
+function restoreUIState() {
+  let saved = null;
+  try { saved = JSON.parse(sessionStorage.getItem(UI_STATE_KEY)); } catch { /* corrupt */ }
+  if (!saved || saved.uid !== (currentUser?.uid || "")) return showScreen("home");
+  if (saved.screen === "note" && getNote(saved.selectedId)) {
+    selectedId = saved.selectedId;
+    return showScreen("note");
+  }
+  if (saved.screen === "board" && getProject(saved.activeProjectId)) {
+    activeProjectId = saved.activeProjectId;
+    return showScreen("board");
+  }
+  if (["home", "tags", "graph", "progress", "planner", "bin", "add", "data"].includes(saved.screen))
+    return showScreen(saved.screen);
+  return showScreen("home");
 }
 
 function renderScreen() {
@@ -1319,7 +1359,9 @@ function switchNotebookForUser(user) {
     // With sync parked, every notebook seeds locally. (When sync returns:
     // skip seeding for signed-in users so starter notes don't push up.)
     if (!user || !CLOUD_SYNC_ENABLED) seedIfEmpty();
-    showScreen("home");
+    // On a refresh this notebook swap arrives after boot: restore the saved
+    // spot (uid-keyed) instead of dumping the user back on Notes.
+    restoreUIState();
   } else {
     renderScreen();
   }
@@ -3203,7 +3245,7 @@ coordinator = new TabCoordinator(handleExternalNotebookChange);
 applyTheme();
 wireFormatting();
 renderAuth();
-showScreen("home");
+restoreUIState();
 // Images load after first paint; failure just means tokens render as
 // placeholders — never block the app on IndexedDB.
 initImages().catch(() => {});
