@@ -96,6 +96,50 @@ export async function verifyUser(req, projectId) {
   }
 }
 
+const OVERLOAD_RETRY_DELAY_MS = 2_000;
+
+function geminiBody(prompt, includeThinkingConfig) {
+  const generationConfig = { maxOutputTokens: prompt.maxOutputTokens };
+  // Flash models "think" before answering by default — often 10-20s of
+  // silence before the first streamed word. Zero budget answers immediately.
+  if (includeThinkingConfig) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+  return {
+    systemInstruction: { parts: [{ text: prompt.system }] },
+    contents: [{ role: "user", parts: [{ text: prompt.user }] }],
+    generationConfig,
+  };
+}
+
+export async function callGemini(prompt, {
+  apiKey,
+  signal,
+  fetchImpl = fetch,
+  delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+} = {}) {
+  const post = (body) => fetchImpl(GEMINI_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+    body: JSON.stringify(body),
+    signal,
+  });
+  let includeThinkingConfig = true;
+  let upstream = await post(geminiBody(prompt, includeThinkingConfig));
+  // An API version that rejects thinkingConfig answers 400 — retry without
+  // it so a future model change degrades to the old (slower) behavior
+  // instead of breaking AI outright.
+  if (upstream.status === 400) {
+    includeThinkingConfig = false;
+    upstream = await post(geminiBody(prompt, includeThinkingConfig));
+  }
+  // The free tier is often momentarily overloaded (503) — one retry after a
+  // short pause rescues most of these without burning the client's patience.
+  if (upstream.status === 503 || upstream.status === 500) {
+    await delay(OVERLOAD_RETRY_DELAY_MS);
+    upstream = await post(geminiBody(prompt, includeThinkingConfig));
+  }
+  return upstream;
+}
+
 export function allowedEmail(claims, allowlist = process.env.AI_ALLOWED_EMAILS || "") {
   const allowed = new Set(allowlist.split(",").map((email) => email.trim().toLowerCase()).filter(Boolean));
   return claims?.email_verified === true && typeof claims.email === "string" && allowed.has(claims.email.toLowerCase());
@@ -162,16 +206,7 @@ export default async function handler(req, res) {
   res.once?.("close", disconnect);
   let upstream;
   try {
-    upstream = await fetch(GEMINI_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: prompt.system }] },
-        contents: [{ role: "user", parts: [{ text: prompt.user }] }],
-        generationConfig: { maxOutputTokens: prompt.maxOutputTokens },
-      }),
-      signal: controller.signal,
-    });
+    upstream = await callGemini(prompt, { apiKey, signal: controller.signal });
   } catch (error) {
     clearTimeout(timeout);
     if (!res.headersSent) res.status(error?.name === "AbortError" ? 504 : 502).json({ error: "The AI service did not respond in time." });
@@ -186,11 +221,13 @@ export default async function handler(req, res) {
     let snippet = "";
     try { snippet = (await upstream.text()).slice(0, 300); } catch { /* opaque */ }
     console.error(`Gemini rejected the request: HTTP ${upstream.status} ${snippet}`);
-    const status = upstream.status === 429 ? 429 : 502;
+    const status = upstream.status === 429 ? 429 : upstream.status === 503 ? 503 : 502;
     res.status(status).json({
       error: status === 429
         ? "The free AI quota is used up for now — try again later."
-        : `The AI service returned an error (HTTP ${upstream.status}). Try again in a moment.`,
+        : status === 503
+          ? "The AI model is overloaded right now — give it a minute and try again."
+          : `The AI service returned an error (HTTP ${upstream.status}). Try again in a moment.`,
     });
     return;
   }

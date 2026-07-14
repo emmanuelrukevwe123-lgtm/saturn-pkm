@@ -1,6 +1,52 @@
 import { describe, expect, it } from "vitest";
-import { allowedEmail, validatePayload } from "../../api/ai.js";
+import { allowedEmail, callGemini, validatePayload } from "../../api/ai.js";
 import { checkRateLimit } from "../../api/rate-limit.js";
+
+const PROMPT = { system: "s", user: "u", maxOutputTokens: 100 };
+
+function fetchScript(...responses) {
+  const bodies = [];
+  const impl = async (url, options) => {
+    bodies.push(JSON.parse(options.body));
+    return responses[Math.min(bodies.length - 1, responses.length - 1)];
+  };
+  return { impl, bodies };
+}
+
+describe("callGemini retry ladder", () => {
+  it("disables thinking on the first attempt", async () => {
+    const { impl, bodies } = fetchScript({ ok: true, status: 200 });
+    await callGemini(PROMPT, { apiKey: "k", fetchImpl: impl });
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0].generationConfig.thinkingConfig).toEqual({ thinkingBudget: 0 });
+  });
+
+  it("falls back without thinkingConfig when the API rejects it", async () => {
+    const { impl, bodies } = fetchScript({ ok: false, status: 400 }, { ok: true, status: 200 });
+    const upstream = await callGemini(PROMPT, { apiKey: "k", fetchImpl: impl });
+    expect(upstream.status).toBe(200);
+    expect(bodies).toHaveLength(2);
+    expect(bodies[1].generationConfig.thinkingConfig).toBeUndefined();
+  });
+
+  it("retries once after a pause when the model is overloaded", async () => {
+    const delays = [];
+    const { impl, bodies } = fetchScript({ ok: false, status: 503 }, { ok: true, status: 200 });
+    const upstream = await callGemini(PROMPT, {
+      apiKey: "k", fetchImpl: impl, delay: async (ms) => delays.push(ms),
+    });
+    expect(upstream.status).toBe(200);
+    expect(bodies).toHaveLength(2);
+    expect(delays).toEqual([2000]);
+  });
+
+  it("gives up after one overload retry", async () => {
+    const { impl, bodies } = fetchScript({ ok: false, status: 503 });
+    const upstream = await callGemini(PROMPT, { apiKey: "k", fetchImpl: impl, delay: async () => {} });
+    expect(upstream.status).toBe(503);
+    expect(bodies).toHaveLength(2);
+  });
+});
 
 describe("AI policy", () => {
   it("requires verified allowlisted email", () => {
