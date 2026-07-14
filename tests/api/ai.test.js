@@ -40,11 +40,26 @@ describe("callGemini retry ladder", () => {
     expect(delays).toEqual([2000]);
   });
 
-  it("gives up after one overload retry", async () => {
+  it("gives up after one overload retry when no fallback is configured", async () => {
     const { impl, bodies } = fetchScript({ ok: false, status: 503 });
-    const upstream = await callGemini(PROMPT, { apiKey: "k", fetchImpl: impl, delay: async () => {} });
+    const upstream = await callGemini(PROMPT, { apiKey: "k", fallbackModel: "", fetchImpl: impl, delay: async () => {} });
     expect(upstream.status).toBe(503);
     expect(bodies).toHaveLength(2);
+  });
+
+  it("tries the configured fallback model on sustained overload", async () => {
+    const urls = [];
+    const scripted = async (url) => {
+      urls.push(url);
+      return urls.length <= 2 ? { ok: false, status: 503 } : { ok: true, status: 200 };
+    };
+    const upstream = await callGemini(PROMPT, {
+      apiKey: "k", fallbackModel: "gemini-3.5-flash-lite", fetchImpl: scripted, delay: async () => {},
+    });
+    expect(upstream.status).toBe(200);
+    expect(urls).toHaveLength(3);
+    expect(urls[0]).toContain("gemini-3.5-flash:");
+    expect(urls[2]).toContain("gemini-3.5-flash-lite:");
   });
 });
 

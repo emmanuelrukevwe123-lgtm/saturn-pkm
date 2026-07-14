@@ -12,9 +12,11 @@ import { createRemoteJWKSet, jwtVerify } from "jose";
 import { checkRateLimit } from "./rate-limit.js";
 
 const GEMINI_MODEL = "gemini-3.5-flash";
-const GEMINI_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/" +
-  GEMINI_MODEL + ":streamGenerateContent?alt=sse";
+
+function geminiUrl(model) {
+  return "https://generativelanguage.googleapis.com/v1beta/models/" +
+    model + ":streamGenerateContent?alt=sse";
+}
 
 // Firebase ID tokens are signed by this Google service account.
 const JWKS = createRemoteJWKSet(new URL(
@@ -113,29 +115,37 @@ function geminiBody(prompt, includeThinkingConfig) {
 export async function callGemini(prompt, {
   apiKey,
   signal,
+  model = GEMINI_MODEL,
+  fallbackModel = process.env.AI_FALLBACK_MODEL || "",
   fetchImpl = fetch,
   delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 } = {}) {
-  const post = (body) => fetchImpl(GEMINI_URL, {
+  const post = (toModel, body) => fetchImpl(geminiUrl(toModel), {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
     body: JSON.stringify(body),
     signal,
   });
   let includeThinkingConfig = true;
-  let upstream = await post(geminiBody(prompt, includeThinkingConfig));
+  let upstream = await post(model, geminiBody(prompt, includeThinkingConfig));
   // An API version that rejects thinkingConfig answers 400 — retry without
   // it so a future model change degrades to the old (slower) behavior
   // instead of breaking AI outright.
   if (upstream.status === 400) {
     includeThinkingConfig = false;
-    upstream = await post(geminiBody(prompt, includeThinkingConfig));
+    upstream = await post(model, geminiBody(prompt, includeThinkingConfig));
   }
   // The free tier is often momentarily overloaded (503) — one retry after a
   // short pause rescues most of these without burning the client's patience.
   if (upstream.status === 503 || upstream.status === 500) {
     await delay(OVERLOAD_RETRY_DELAY_MS);
-    upstream = await post(geminiBody(prompt, includeThinkingConfig));
+    upstream = await post(model, geminiBody(prompt, includeThinkingConfig));
+  }
+  // Sustained overload: if a fallback model is configured (AI_FALLBACK_MODEL,
+  // e.g. a lite tier with spare capacity), give it one shot before giving up.
+  if ((upstream.status === 503 || upstream.status === 500) && fallbackModel && fallbackModel !== model) {
+    console.error(`Primary model ${model} overloaded; trying fallback ${fallbackModel}`);
+    upstream = await post(fallbackModel, geminiBody(prompt, includeThinkingConfig));
   }
   return upstream;
 }
