@@ -47,7 +47,7 @@ Browser ◀──────────────(plain text stream)──�
    | Variable | Value |
    |---|---|
    | `GEMINI_API_KEY` | the key from AI Studio |
-   | `FIREBASE_PROJECT_ID` | the `projectId` from `public/firebase-config.js` |
+   | `FIREBASE_PROJECT_ID` | the `projectId` from `src/config.js` |
 
    - **Vercel**: Project → Settings → Environment Variables (then redeploy).
    - **Local** (`npx vercel dev`): put them in `.env.local` or export them.

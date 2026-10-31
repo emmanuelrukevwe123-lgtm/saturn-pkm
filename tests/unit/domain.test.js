@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dedupeTitles, isHttpUrl, normalizeProject, normalizeTask, renameNoteState, rewriteWikiLinks, uniqueTitle } from "../../public/modules/domain.js";
+import { dedupeTitles, isHttpUrl, normalizeProject, normalizeTask, renameNoteState, rewriteWikiLinks, uniqueTitle } from "../../src/lib/domain.js";
 
 describe("HQ fields on records", () => {
   it("drops links that are not http or https", () => {

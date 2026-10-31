@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { SCHEMA_VERSION } from "../../public/modules/domain.js";
-import { META_KEY, atomicWrite, migrateLegacyStorage, readNotebook, writeNotebook } from "../../public/modules/persistence.js";
+import { SCHEMA_VERSION } from "../../src/lib/domain.js";
+import { META_KEY, atomicWrite, migrateLegacyStorage, readNotebook, writeNotebook } from "../../src/lib/persistence.js";
 
 class MemoryStorage {
   constructor(entries = {}) { this.map = new Map(Object.entries(entries)); this.failOn = null; }

@@ -89,6 +89,7 @@ export async function verifyUser(req, projectId) {
   if (!header.startsWith("Bearer ")) return null;
   try {
     const { payload } = await jwtVerify(header.slice(7), JWKS, {
+      algorithms: ["RS256"],
       issuer: `https://securetoken.google.com/${projectId}`,
       audience: projectId,
     });
@@ -166,6 +167,11 @@ export default async function handler(req, res) {
   if (!apiKey || !projectId || !process.env.AI_ALLOWED_EMAILS ||
       !process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) {
     res.status(500).json({ error: "AI is not configured on the server yet." });
+    return;
+  }
+
+  if (!String(req.headers["content-type"] || "").toLowerCase().startsWith("application/json")) {
+    res.status(415).json({ error: "Send JSON." });
     return;
   }
 
@@ -251,27 +257,32 @@ export default async function handler(req, res) {
     const reader = upstream.body.getReader();
     const decoder = new TextDecoder();
     let buffered = "";
+    const forwardLine = (raw) => {
+      const line = raw.trim();
+      if (!line.startsWith("data:")) return;
+      const payload = line.slice(5).trim();
+      if (!payload || payload === "[DONE]") return;
+      try {
+        const parts = JSON.parse(payload)?.candidates?.[0]?.content?.parts || [];
+        for (const part of parts) {
+          if (typeof part.text === "string") res.write(part.text);
+        }
+      } catch {
+        // Partial or non-JSON SSE line — skip it.
+      }
+    };
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       buffered += decoder.decode(value, { stream: true });
       let newline;
       while ((newline = buffered.indexOf("\n")) >= 0) {
-        const line = buffered.slice(0, newline).trim();
+        forwardLine(buffered.slice(0, newline));
         buffered = buffered.slice(newline + 1);
-        if (!line.startsWith("data:")) continue;
-        const payload = line.slice(5).trim();
-        if (!payload || payload === "[DONE]") continue;
-        try {
-          const parts = JSON.parse(payload)?.candidates?.[0]?.content?.parts || [];
-          for (const part of parts) {
-            if (typeof part.text === "string") res.write(part.text);
-          }
-        } catch {
-          // Partial or non-JSON SSE line — skip it.
-        }
       }
     }
+    // The stream may end without a final newline; that last line still counts.
+    forwardLine(buffered);
   } catch {
     // The timeout or a client disconnect cancels the upstream reader.
   } finally {

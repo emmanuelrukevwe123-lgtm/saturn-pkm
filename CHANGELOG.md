@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — React migration and security pass
+
+- Rebuilt the app in React with Vite. Rules, persistence, backup and sync stay plain, tested modules in `src/lib`; data formats and storage keys are unchanged.
+- Bundled Firebase from npm instead of loading it from a CDN at runtime, and removed that CDN from the Content Security Policy.
+- Security: pasted and dropped content enters notes as plain text; backups accept only image files for images and valid ids; "Delete forever" erases content and tells other devices; AI tokens must be RS256; auth pages no longer get anti-framing headers meant for the app, and `apis.google.com` is allowed for Google sign-in; added HSTS, a cross-origin opener policy and `no-store` on the API.
+- Dependencies: production has no known vulnerabilities; upgraded Vite, Vitest, Firebase and firebase-tools.
+- Fixed: links to titles containing `&`, quotes or `*`; deleted notes returning through sync; restored notes being deleted again by sync; welcome notes returning after being deleted; failed saves leaving the screen out of step with storage; "Replace" imports deleting other accounts' images; the import message vanishing; screens opened right after loading being forgotten on refresh; project names fighting the cursor; image tokens being sent to AI by Summarize; a last AI line being dropped; white drag handles in dark mode; note and project rows and kanban cards not working from the keyboard.
+
 ## Unreleased — Saturn HQ
 
 - Phase 1: schema v3 adds project stages, categories, next step, done-when, links, session log and this-week tasks, plus HQ review dates. Old data loads unchanged with defaults; new fields round-trip through `.saturn` backups. All rules live in `public/modules/hq.js`.

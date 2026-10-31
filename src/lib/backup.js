@@ -1,7 +1,14 @@
 import { BACKUP_FORMAT, SCHEMA_VERSION, dedupeTitles, newId, normalizeHq, normalizeState, uniqueTitle } from "./domain.js";
 
+export const MAX_BACKUP_BYTES = 500 * 1024 * 1024;
 const MAX_RECORDS = 100_000;
+const IMAGE_ID = /^[\w-]+$/;
+const IMAGE_TYPE = /^image\/[-\w.+]+$/;
 const MAX_STRING = 2_000_000;
+
+function validId(value) {
+  return typeof value === "string" || typeof value === "number";
+}
 
 function validString(value, max = MAX_STRING) {
   return typeof value === "string" && value.length <= max;
@@ -22,10 +29,13 @@ export function validateBackup(input) {
   else if (input?.tracks?.length > MAX_RECORDS) errors.push("tracks contains too many records.");
   if (input?.hq != null && (typeof input.hq !== "object" || Array.isArray(input.hq))) errors.push("hq must be an object.");
   for (const note of [...(input?.notes || []), ...(input?.deletedNotes || [])]) {
-    if (note?.id == null || !validString(note?.title, 500) || !validString(note?.body)) errors.push("A note is invalid or too large.");
+    if (!validId(note?.id) || !validString(note?.title, 500) || !validString(note?.body)) errors.push("A note is invalid or too large.");
+  }
+  for (const record of [...(input?.projects || []), ...(input?.tasks || []), ...(Array.isArray(input?.tracks) ? input.tracks : [])]) {
+    if (!validId(record?.id)) errors.push("A project, task or track has an invalid id.");
   }
   for (const image of input?.images || []) {
-    if (image?.id == null || !validString(image?.data, 20_000_000) || !/^[-\w.+]+\/[-\w.+]+$/.test(image?.type || ""))
+    if (!IMAGE_ID.test(String(image?.id)) || !validString(image?.data, 20_000_000) || !IMAGE_TYPE.test(image?.type || ""))
       errors.push("An image record is invalid or too large.");
   }
   return { valid: errors.length === 0, errors };

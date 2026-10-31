@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { normalizeState } from "../../public/modules/domain.js";
+import { normalizeState } from "../../src/lib/domain.js";
 import {
   MAX_ORBIT, STARTER_PROJECTS, activeTracks, addLink, addLogEntry, addStarterProjects, addTrack, canMoveToOrbit,
   clearFinishedThisWeek, removeTrack, updateTrack,
   markReviewed, moveStage, orbitProjects, parkIdea, parkedReviewDue, projectProgress, removeLink, reviewDue,
   reviewStatus, setThisWeek, thisWeekTasks, updateProjectDetails,
-} from "../../public/modules/hq.js";
+} from "../../src/lib/hq.js";
 
 const NOW = "2026-06-10T12:00:00.000Z";
 

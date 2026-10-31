@@ -3,7 +3,7 @@
 **Live at https://saturn-pkm.vercel.app**
 
 A **personal knowledge management** app (Zettelkasten-style linked notes) built with
-plain HTML, CSS, and JavaScript modules, with a small authenticated serverless AI endpoint.
+React and Vite, with a small authenticated serverless AI endpoint.
 Notes link to each other with `[[Note title]]`, show backlinks automatically,
 render as a live **Graph**, and can hold **images** (compressed, stored in
 IndexedDB, resizable by dragging). A **Planner** adds kanban project boards
@@ -19,13 +19,16 @@ Quicksand type, progress rings, ledger-style lists.
 ## Project structure
 
 ```
-├── public/       The site — this is what gets deployed
-│   ├── index.html            Landing page (what the app is + how to use it)
-│   ├── app.html              The app itself (served at /app)
-│   ├── firebase-config.js    Firebase config for Google sign-in
-│   ├── modules/             Persistence, backup, sync, and domain logic
-│   ├── style.css
-│   └── script.js            Browser UI integration
+├── index.html                Landing page (what the app is + how to use it)
+├── app.html                  The app's entry page (served at /app)
+├── src/
+│   ├── main.jsx, App.jsx     React entry point and app shell
+│   ├── AppContext.jsx        Shared state: navigation, drafts, sign-in, sync
+│   ├── screens/, components/ The React UI
+│   ├── lib/                  Rules, persistence, backup and sync: plain, tested JS
+│   ├── config.js             Firebase web config and the sync flag
+│   └── style.css
+├── public/                   Static files copied as is (favicon)
 ├── api/
 │   └── ai.js                 Vercel serverless function — Gemini AI proxy
 ├── docs/
@@ -40,8 +43,9 @@ Quicksand type, progress rings, ledger-style lists.
 ├── CONTEXT.md                Living log of what was built and why
 ├── firestore.rules / storage.rules  Owner-only cloud policy
 ├── tests/                    Unit, API, rules, browser, and axe tests
-├── package.json              Development and serverless dependencies
-└── vercel.json               Tells Vercel to serve public/ with no build step
+├── package.json              Dependencies and scripts
+├── vite.config.js            Build configuration
+└── vercel.json               Vercel build, security headers and auth rewrites
 ```
 
 ## Run locally
@@ -72,8 +76,8 @@ Records are cached in **your browser's localStorage**. Signed-out notes use
 the key `saturn-pkm-notes`, deleted notes use `saturn-pkm-deleted-notes`,
 planner data uses `saturn-pkm-planner-*`, and signed-in data uses
 Google-user-specific keys. Images are stored as compressed blobs in the
-browser's IndexedDB (`saturn-pkm-images`). Use Data & Sync to export or restore a complete backup. Cloud sync remains off unless the deployment enables `window.SATURN_FEATURES.cloudSync` after deploying Firebase rules. When enabled, authenticated records and images use owner-scoped Firestore and Storage paths while local storage remains the offline cache.
+browser's IndexedDB (`saturn-pkm-images`). Use Data & Sync to export or restore a complete backup. Cloud sync remains off unless the build sets `VITE_CLOUD_SYNC=true` after deploying Firebase rules. When enabled, authenticated records and images use owner-scoped Firestore and Storage paths while local storage remains the offline cache.
 
 ## Verification
 
-`npm run check` runs syntax, lint, unit/API, and desktop/mobile browser tests. `npm run test:rules` starts Firebase emulators and checks cross-user denial. See [CONTRIBUTING.md](CONTRIBUTING.md).
+`npm run check` runs lint, unit/API tests, then desktop and mobile browser tests against the production build with its production security headers. `npm run test:rules` starts Firebase emulators and checks cross-user denial. See [CONTRIBUTING.md](CONTRIBUTING.md).

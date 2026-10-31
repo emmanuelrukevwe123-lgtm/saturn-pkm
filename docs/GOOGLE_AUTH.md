@@ -30,10 +30,10 @@ Authentication settings. Add your Vercel domain after deployment.
 
 ## 3. Fill in Saturn's Config
 
-Edit `public/firebase-config.js`:
+Edit `FIREBASE_CONFIG` in `src/config.js`:
 
 ```js
-window.SATURN_FIREBASE_CONFIG = {
+export const FIREBASE_CONFIG = {
   apiKey: "YOUR_API_KEY",
   authDomain: "YOUR_PROJECT.firebaseapp.com",
   projectId: "YOUR_PROJECT_ID",
@@ -68,7 +68,7 @@ Then visit `http://localhost:8000`.
 ## 5. Enable Cloud Sync (Firestore)
 
 > ⚠️ **Currently disabled in the app** (`CLOUD_SYNC_ENABLED = false` in
-> `public/script.js`). The blocker: the `(default)` Firestore database does not
+> `src/lib/cloud-client.js`). The blocker: the `(default)` Firestore database does not
 > exist in project `saturn-1165b` (a database was created but apparently under a
 > custom name or another project). To re-enable: create the **(default)**
 > database per the steps below, publish the rules, then flip the flag to `true`.

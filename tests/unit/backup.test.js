@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createBackup, prepareImport, validateBackup } from "../../public/modules/backup.js";
+import { createBackup, prepareImport, validateBackup } from "../../src/lib/backup.js";
 
 const empty = { notes: [], deletedNotes: [], projects: [], tasks: [] };
 

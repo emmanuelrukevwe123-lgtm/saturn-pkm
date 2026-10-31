@@ -321,6 +321,9 @@ summaries + "Ask Saturn" Q&A over the user's notes).
 - Planet favicon (theme-aware SVG)
 - First-run seed: 2 linked starter notes explaining the app
 
+## React migration (v17) — read this first
+The app is now React + Vite. Older sections below describe `public/script.js` and "no build step"; both are history. Layout: `src/lib` holds pure rules and storage (`notes`, `planner`, `hq`, `domain`, `store`, `backup`, `cloud-client`, `markdown`), `src/AppContext.jsx` holds shared UI state, `src/screens` the UI. Conventions: a rule returns new state or `{ error }`, and `store.apply()` writes before showing it. `renderMarkdown` is the only source of injected HTML and must stay the only one. The note editor's DOM is not managed by React (see `useEditorContent`). Browser tests run against the production build with the headers from `vercel.json`.
+
 ## Saturn HQ (spec: docs/SATURN_HQ_SPEC.md)
 Phase 1 (schema v3): `normalizeProject`/`normalizeTask` gained the HQ fields, and a new `hq` object (`lastReviewAt`, `lastParkedReviewAt`, `starterAddedAt`) is stored under `saturn-pkm-hq` per account and in backups, but is not cloud-synced. Rules are pure functions in `public/modules/hq.js`: success returns new state, refusal returns `{ error }`. They bump `updated`/`revision` because merge and sync pick winners by `updated`. `currentKeys()` in `script.js` is now the one list of storage keys.
 

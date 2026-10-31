@@ -90,7 +90,8 @@ buttons above the note body to format:
 | 🖼 Image | Add a picture to the note (you can also paste or drop one straight in) |
 
 (Under the hood notes are still saved in a portable plain-text format, so
-older notes and anything you paste keep working.)
+older notes keep working. Pasted text comes in as plain text, without its
+original formatting; use the buttons above to style it.)
 
 ### Images
 

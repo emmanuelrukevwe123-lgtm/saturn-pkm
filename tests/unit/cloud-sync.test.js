@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mergeSyncCollection, syncRecord, tombstoneExpired } from "../../public/modules/cloud-sync.js";
+import { mergeSyncCollection, syncRecord, tombstoneExpired } from "../../src/lib/cloud-sync.js";
 
 describe("cloud sync domain", () => {
   it("doesn't let a task's conflict copy take a this-week slot", () => {

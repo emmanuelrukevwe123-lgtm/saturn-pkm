@@ -1,12 +1,13 @@
 # Deploying Saturn to Vercel (free Hobby plan)
 
-Use Node 22 and configure the variables from `.env.example` in Vercel. Deploy `firestore.rules`, `storage.rules`, and `firestore.indexes.json` before enabling `window.SATURN_FEATURES.cloudSync` in `public/firebase-config.js`. Keep the first rollout limited to the owner account, verify a second device and offline reconnect, then promote the flag.
+Use Node 22 and configure the variables from `.env.example` in Vercel. Deploy `firestore.rules`, `storage.rules`, and `firestore.indexes.json` before setting the `VITE_CLOUD_SYNC=true` build variable in Vercel. Keep the first rollout limited to the owner account, verify a second device and offline reconnect, then promote the flag.
 
 Before deployment run `npm run check` and `npm run test:rules`. The committed Vercel configuration adds CSP, MIME sniffing, referrer, permissions, and frame protections.
 
-Saturn's browser app is a static site with a serverless AI endpoint, which
-makes it a perfect fit for Vercel's free tier. `vercel.json` at the repo root
-already tells Vercel to skip building and serve `public/`.
+Saturn's browser app is a React app that builds to static files, with a
+serverless AI endpoint, which makes it a perfect fit for Vercel's free tier.
+`vercel.json` at the repo root already tells Vercel to run `npm run build` and
+serve `dist/`.
 
 ## What the free (Hobby) plan gives you
 
@@ -35,9 +36,8 @@ Best flow: every `git push` auto-deploys.
 3. Click **Add New… → Project** and **Import** the `saturn-pkm` repository.
 4. Configure:
    - **Framework Preset:** `Other`
-   - Build settings are picked up from `vercel.json` automatically
-     (no build command, output directory `public`). If you set them manually:
-     Build Command *empty*, Output Directory `public`.
+   - Build settings are picked up from `vercel.json` automatically. If you set
+     them manually: Build Command `npm run build`, Output Directory `dist`.
 5. Click **Deploy**. In ~10 seconds you'll get `https://saturn-pkm-<something>.vercel.app`.
 
 From then on, every push to `main` deploys automatically; pull requests get

@@ -2,17 +2,14 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  timeout: 30_000,
-  use: {
-    baseURL: "http://127.0.0.1:4173", trace: "retain-on-failure",
-    launchOptions: {
-      env: { ...process.env, LD_LIBRARY_PATH: [process.env.LD_LIBRARY_PATH, "/tmp/saturn-playwright-libs/root/usr/lib/x86_64-linux-gnu"].filter(Boolean).join(":") },
-    },
-  },
+  timeout: 60_000, // accessibility scans can be slow on a busy machine
+  use: { baseURL: "http://127.0.0.1:4173", trace: "retain-on-failure" },
   webServer: {
-    command: "npm run dev -- --port 4173",
+    // Tests run against the production build, with the production headers.
+    command: "npm run build && npm run preview -- --port 4173 --strictPort",
     url: "http://127.0.0.1:4173/app.html",
-    reuseExistingServer: true,
+    reuseExistingServer: false,
+    timeout: 180_000,
   },
   projects: [
     { name: "desktop-chromium", use: { ...devices["Desktop Chrome"] } },
