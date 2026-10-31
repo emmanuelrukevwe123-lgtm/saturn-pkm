@@ -194,7 +194,7 @@ export function App() {
   // The same element between renders, so opening the menu doesn't re-render the
   // screen behind it. Screens still update themselves through useApp().
   const screenKey = screen === "note" ? `note-${selectedId}` : screen;
-  const currentScreen = useMemo(() => <Screen key={screenKey} />, [Screen, screenKey]);
+  const currentScreen = useMemo(() => <Screen key={screenKey} />, [screenKey]);
 
   return (
     <>
