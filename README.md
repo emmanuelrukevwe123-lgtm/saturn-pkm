@@ -81,3 +81,7 @@ browser's IndexedDB (`saturn-pkm-images`). Use Data & Sync to export or restore 
 ## Verification
 
 `npm run check` runs lint, unit/API tests, then desktop and mobile browser tests against the production build with its production security headers. `npm run test:rules` starts Firebase emulators and checks cross-user denial. See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## License
+
+[MIT](./LICENSE) © 2026 Emmanuel Nwabuokei
