@@ -326,6 +326,8 @@ Phase 1 (schema v3): `normalizeProject`/`normalizeTask` gained the HQ fields, an
 
 Phase 2 (v16): `#screen-orbit` and `#project-header` are static markup in `app.html`, filled in by the "Saturn HQ" block of `script.js` through `applyHqRule()`. HQ dialogs use native `<dialog>` (focus trap and Esc for free), not the older task-pop pattern. Category chips use the tag palette with a fainter dark-mode tint to pass contrast. Also added: `reviewStatus` for the card label, and `hq.spec.js` browser and axe tests.
 
+Phase 3: `tracks` is a full collection (`saturn-pkm-tracks`, backups, `users/{uid}/tracks`, last-write-wins like projects). Existing owner-only Firestore rules already cover it, so only the rules test was extended. Entering the review's "Pick 3" step clears finished tasks from this week; `lastReviewAt` is only set by Finish review. Phase 4 (GitHub repo info) is optional and not built.
+
 ## Phase status
 | Phase | What | Status |
 |---|---|---|

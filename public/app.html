@@ -305,6 +305,11 @@
                 <span class="spacer"></span>
                 <button id="hq-review-start" class="pill pill-save" type="button">Start review</button>
               </div>
+              <div class="panel-card hq-review-card hq-parked-prompt" id="hq-parked-prompt" hidden>
+                <span>Monthly check: is anything parked worth picking up, or letting go?</span>
+                <span class="spacer"></span>
+                <button id="hq-parked-review" class="pill" type="button">Review parked</button>
+              </div>
             </section>
 
             <section class="hq-section" aria-labelledby="hq-projects-title">
@@ -328,6 +333,19 @@
                 <summary id="hq-dropped-summary"></summary>
                 <div class="ledger" id="hq-dropped-list"></div>
               </details>
+            </section>
+
+            <section class="hq-section" aria-labelledby="hq-tracks-title">
+              <h2 class="list-heading" id="hq-tracks-title">Learning tracks</h2>
+              <div class="hq-tracks" id="hq-tracks"></div>
+              <div class="empty small" id="hq-tracks-empty" hidden>No learning tracks yet.</div>
+              <form id="hq-track-form" class="hq-track-form">
+                <label class="visually-hidden" for="hq-track-name">Track name</label>
+                <input id="hq-track-name" class="field" placeholder="Name a track…" autocomplete="off">
+                <label class="visually-hidden" for="hq-track-role">Track role</label>
+                <select id="hq-track-role" class="field"></select>
+                <button id="hq-track-add" class="pill" type="submit" disabled>Add track</button>
+              </form>
             </section>
           </div>
         </section>
@@ -356,7 +374,7 @@
           <div id="storage-state" class="sync-state" role="status">Local data ready.</div>
           <div class="panel-card data-panel">
             <h2 class="list-heading">Full backup</h2>
-            <p>Includes notes, bin, projects, tasks, settings, and every referenced image.</p>
+            <p>Includes notes, bin, projects, tasks, learning tracks, Orbit review dates, settings, and every referenced image.</p>
             <button id="data-export" class="pill pill-save" type="button">Export .saturn backup</button>
           </div>
           <div class="panel-card data-panel">
@@ -569,6 +587,29 @@
     <ul class="hq-check-list" id="hq-week-options"></ul>
     <div class="note-tools">
       <button class="pill pill-save" type="button" data-close-dialog>Done</button>
+    </div>
+  </dialog>
+
+  <dialog id="hq-review-dialog" class="hq-dialog" aria-labelledby="hq-review-heading">
+    <div class="eyebrow" id="hq-review-step"></div>
+    <h2 class="hq-dialog-title" id="hq-review-heading" tabindex="-1"></h2>
+    <p class="hq-note" id="hq-review-hint" role="status"></p>
+    <div id="hq-review-body"></div>
+    <div class="note-tools">
+      <button id="hq-review-back" class="pill" type="button">Back</button>
+      <button id="hq-review-next" class="pill pill-save" type="button">Next</button>
+      <span class="spacer"></span>
+      <button class="pill" type="button" data-close-dialog>Close</button>
+    </div>
+  </dialog>
+
+  <dialog id="hq-parked-dialog" class="hq-dialog" aria-labelledby="hq-parked-heading">
+    <h2 class="hq-dialog-title" id="hq-parked-heading" tabindex="-1">Parked review</h2>
+    <p class="hq-note">Move what's ready to Next, and drop what you've let go of. The rest stays parked.</p>
+    <div class="ledger" id="hq-parked-options"></div>
+    <div class="note-tools">
+      <button id="hq-parked-finish" class="pill pill-save" type="button">Finish review</button>
+      <button class="pill" type="button" data-close-dialog>Close</button>
     </div>
   </dialog>
 

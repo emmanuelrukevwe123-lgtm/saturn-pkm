@@ -87,6 +87,8 @@ test("logs a session, edits the next step, and rejects a bad link", async ({ pag
   await expect(page.locator("#ph-links a")).toHaveAttribute("href", "https://example.com");
 
   await page.reload();
+  await openNav(page, "Orbit");
+  await page.getByRole("button", { name: "Open Project a" }).click();
   await expect(page.getByLabel("Next step")).toHaveValue("Push the image");
   await expect(page.locator("#ph-log")).toContainText("Wrote the Dockerfile");
 });
@@ -115,6 +117,8 @@ test("adds the starter projects once, skipping names already used", async ({ pag
   await expect(page.locator("#hq-parked-count")).toHaveText("6");
   await expect(page.getByRole("button", { name: "Add my starter projects" })).toBeHidden();
   await page.reload();
+  await openNav(page, "Orbit");
+  await expect(page.locator("#hq-orbit-cards")).toContainText("soc-home-lab");
   await expect(page.getByRole("button", { name: "Add my starter projects" })).toBeHidden();
 });
 
@@ -134,6 +138,124 @@ test("old projects still open on the board with the header's defaults", async ({
   await expect(page.locator('.kb-col[data-status="doing"]')).toContainText("Keep me");
 });
 
+test("the weekly review walks four steps and only completes on Finish", async ({ page }) => {
+  await seed(page, {
+    projects: [project("a", "orbit"), project("b", "next")],
+    tasks: [
+      { id: "t1", projectId: "a", title: "Finish me", thisWeek: true }, { id: "t2", projectId: "a", title: "Keep going" },
+      { id: "t3", projectId: "a", title: "Start me" }, { id: "t4", projectId: "a", title: "Pick me" },
+    ],
+  });
+  await openNav(page, "Orbit");
+  await expect(page.locator("#hq-review-status")).not.toHaveText("Done this week");
+  await page.getByRole("button", { name: "Start review" }).click();
+  const dialog = page.getByRole("dialog");
+
+  await expect(dialog).toContainText("Step 1 of 4");
+  await dialog.getByRole("checkbox", { name: /Finish me/ }).check();
+  await dialog.getByRole("button", { name: "Close" }).click();
+  await expect(page.locator("#hq-review-status")).not.toHaveText("Done this week");
+
+  await page.getByRole("button", { name: "Start review" }).click();
+  await dialog.getByRole("button", { name: "Next" }).click();
+  await expect(dialog).toContainText("Update statuses");
+  await dialog.getByLabel("Status of Start me").selectOption("doing");
+  await dialog.getByRole("button", { name: "Next" }).click();
+
+  await expect(dialog).toContainText("Pick 3 tasks");
+  await expect(dialog.getByRole("checkbox", { name: /Finish me/ })).toHaveCount(0);
+  await dialog.getByRole("checkbox", { name: /Pick me/ }).check();
+  await expect(dialog.locator("#hq-review-hint")).toHaveText("1 of 3 picked");
+  await dialog.getByRole("button", { name: "Next" }).click();
+
+  await expect(dialog).toContainText("Drop anything stuck");
+  await dialog.getByRole("button", { name: "Drop Project b" }).click();
+  const drop = page.getByRole("dialog", { name: "Drop project" });
+  await drop.getByLabel("Why are you dropping it?").fill("Stuck");
+  await drop.getByRole("button", { name: "Drop project" }).click();
+  await expect(dialog.getByRole("button", { name: "Drop Project b" })).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Finish review" }).click();
+
+  await expect(page.locator("#hq-review-status")).toHaveText("Done this week");
+  await expect(page.locator("#hq-week-list")).toContainText("Pick me");
+  await expect(page.locator("#hq-week-list")).not.toContainText("Finish me");
+  await page.reload();
+  await openNav(page, "Orbit");
+  await expect(page.locator("#hq-review-status")).toHaveText("Done this week");
+});
+
+test("the parked review prompts once a month and can move or drop projects", async ({ page }) => {
+  await seed(page, { projects: [project("p", "parked"), project("q", "parked")] });
+  await openNav(page, "Orbit");
+  await page.getByRole("button", { name: "Review parked" }).click();
+  const dialog = page.getByRole("dialog", { name: "Parked review" });
+  await dialog.getByRole("button", { name: "Move Project p to Next" }).click();
+  await expect(page.locator("#hq-next-list")).toContainText("Project p");
+  await dialog.getByRole("button", { name: "Drop Project q" }).click();
+  await page.getByLabel("Why are you dropping it?").fill("Not needed");
+  await page.getByRole("dialog", { name: "Drop project" }).getByRole("button", { name: "Drop project" }).click();
+  await expect(dialog).toContainText("Nothing left in Parked");
+  await dialog.getByRole("button", { name: "Finish review" }).click();
+  await expect(page.locator("#hq-parked-prompt")).toBeHidden();
+});
+
+test("hides the parked prompt when it was done this month", async ({ page }) => {
+  await seed(page, { projects: [project("p", "parked")], hq: { lastParkedReviewAt: new Date().toISOString() } });
+  await openNav(page, "Orbit");
+  await expect(page.locator("#hq-parked-prompt")).toBeHidden();
+});
+
+test("learning tracks can be added, updated and removed, keeping keyboard focus", async ({ page }) => {
+  await openNav(page, "Orbit");
+  await page.getByLabel("Track name").fill("AWS");
+  await page.getByLabel("Track role").selectOption("cert");
+  await page.getByRole("button", { name: "Add track" }).click();
+  await expect(page.locator("#hq-tracks")).toContainText("Certification");
+
+  await page.getByLabel("AWS progress percent").fill("140");
+  await page.keyboard.press("Tab");
+  await expect(page.getByLabel("AWS next step")).toBeFocused();
+  await expect(page.getByLabel("AWS progress percent")).toHaveValue("100");
+  await expect(page.getByRole("progressbar", { name: "AWS progress" })).toHaveAttribute("aria-valuenow", "100");
+  await page.getByLabel("AWS next step").fill("Book the exam");
+  await page.keyboard.press("Tab");
+
+  await page.reload();
+  await openNav(page, "Orbit");
+  await expect(page.getByLabel("AWS next step")).toHaveValue("Book the exam");
+  page.on("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Remove AWS" }).click();
+  await expect(page.locator("#hq-tracks-empty")).toBeVisible();
+});
+
+test("a full backup restores Orbit data through the real import screen", async ({ page }) => {
+  await seed(page, {
+    projects: [project("a", "orbit", { nextStep: "Keep me", log: [{ id: "e", date: "2026-01-01T00:00:00.000Z", text: "Logged" }] })],
+    tasks: [{ id: "t", projectId: "a", title: "Week task", thisWeek: true }],
+    hq: { lastReviewAt: new Date().toISOString(), starterAddedAt: "2026-01-01T00:00:00.000Z" },
+  });
+  await page.evaluate(() => localStorage.setItem("saturn-pkm-tracks", JSON.stringify([{ id: "k", name: "AWS", progress: 40 }])));
+  await page.reload();
+  await openNav(page, "Data & Sync");
+  const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: /Export .saturn backup/ }).click()]);
+  const path = await download.path();
+
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await openNav(page, "Data & Sync");
+  await page.locator("#data-import-file").setInputFiles({ name: "b.saturn", mimeType: "application/json", buffer: (await import("node:fs")).readFileSync(path) });
+  page.on("dialog", (dialog) => dialog.accept());
+  await page.locator('input[value="replace"]').check();
+  await page.getByRole("button", { name: "Validate and import" }).click();
+
+  await openNav(page, "Orbit");
+  await expect(page.locator("#hq-orbit-cards")).toContainText("Keep me");
+  await expect(page.locator("#hq-week-list")).toContainText("Week task");
+  await expect(page.locator("#hq-review-status")).toHaveText("Done this week");
+  await expect(page.locator("#hq-tracks")).toContainText("AWS");
+  await expect(page.locator("#hq-starter")).toBeHidden();
+});
+
 for (const theme of ["light", "dark"]) {
   test(`Orbit and the project header pass axe in ${theme} mode`, async ({ page }) => {
     await page.evaluate((value) => localStorage.setItem("saturn-pkm-theme", value), theme);
@@ -146,10 +268,21 @@ for (const theme of ["light", "dark"]) {
       ],
       tasks: [{ id: "t", projectId: "a", title: "Task", thisWeek: true, status: "done" }, { id: "u", projectId: "a", title: "Open", thisWeek: true }],
     });
+    await page.evaluate(() => localStorage.setItem("saturn-pkm-tracks", JSON.stringify([{ id: "k", name: "AWS", role: "cert", progress: 40 }])));
+    await page.reload();
     const serious = (results) => results.violations.filter((violation) => ["serious", "critical"].includes(violation.impact));
     await openNav(page, "Orbit");
     await page.locator("#hq-dropped summary").click();
     expect(serious(await new AxeBuilder({ page }).analyze())).toEqual([]);
+    await page.getByRole("button", { name: "Start review" }).click();
+    for (let step = 0; step < 4; step += 1) {
+      expect(serious(await new AxeBuilder({ page }).analyze())).toEqual([]);
+      if (step < 3) await page.locator("#hq-review-next").click();
+    }
+    await page.locator("#hq-review-dialog").getByRole("button", { name: "Close" }).click();
+    await page.getByRole("button", { name: "Review parked" }).click();
+    expect(serious(await new AxeBuilder({ page }).analyze())).toEqual([]);
+    await page.locator("#hq-parked-dialog").getByRole("button", { name: "Close" }).click();
     await page.getByRole("button", { name: "Open Project a" }).click();
     await expect(page.locator("#ph-stage")).toHaveText("In orbit");
     expect(serious(await new AxeBuilder({ page }).analyze())).toEqual([]);

@@ -2,7 +2,7 @@
 
 ## Backups and restore
 
-Open **Data & Sync** and choose **Export .saturn backup**. The versioned bundle contains active and deleted notes, projects, tasks, settings, and referenced images. To restore, select the file, choose **Merge** or **Replace**, review the validated summary, and confirm. Invalid or incompatible files make no changes; failed writes roll back.
+Open **Data & Sync** and choose **Export .saturn backup**. The versioned bundle contains active and deleted notes, projects, tasks, learning tracks, Orbit review dates, settings, and referenced images. To restore, select the file, choose **Merge** or **Replace**, review the validated summary, and confirm. Invalid or incompatible files make no changes; failed writes roll back.
 
 Titles are unique without regard to capitalization. Saturn adds a deterministic number when creation, restore, import, or sync would collide. Renaming a note also updates matching `[[wiki links]]` in notes and task descriptions.
 
@@ -24,6 +24,7 @@ feature, screen by screen.
 | **Tags** | Notes grouped by tag, each group with its own "how linked" ring |
 | **Graph** | Your knowledge web as a map — notes are stars, links are threads |
 | **Progress** | Stats: % linked, total links, orphans, per-tag breakdown |
+| **Orbit** | Saturn HQ: your two active projects, this week's tasks, parked ideas, reviews and learning tracks |
 | **Planner** | Kanban project boards — plan work in To do / In progress / Done columns |
 | **Bin** | Deleted notes, shown as dead stars you can restore or remove forever |
 | **＋ New note** | Opens the "Add a note" form |
@@ -146,6 +147,49 @@ The **Planner** screen holds your projects. Name a project and press
 
 Planner data lives in the same place as your notes (this browser,
 per-account when signed in).
+
+## Orbit — stay on two projects
+
+The **Orbit** screen stops you jumping between projects. It uses the same
+projects as the Planner, with a stage added to each: **In orbit**, **Next**,
+**Parked**, **Done** or **Dropped**. Projects you already had start in Next.
+
+- **In orbit** holds up to two projects. Each card shows its next step and task
+  progress, with **Open** and **Log session** buttons. A third project can't
+  join until you finish or drop one.
+- **This week's 3 tasks**: press **Pick tasks** to choose. Ticking one marks it
+  done. A finished task keeps its slot until the weekly review.
+- **New idea? Park it.** Name it, choose a category, press **Park idea**. It
+  goes in Parked and doesn't compete for your attention.
+- **All projects** lists Next, Parked and Done. Dropped projects and their
+  reasons sit behind **Dropped**.
+- **Learning tracks** record a role, a progress percentage and a next step for
+  each thing you're studying.
+- **Add my starter projects** appears until you've used it once. It skips any
+  name you already have.
+
+### On a project's board
+
+Opening a project shows a header above its kanban: **Next step**, **Done when**,
+category, **Links** (web addresses only), and a **Session log**, newest first.
+Paste a summary there after each working session. The buttons move it between
+stages: **Move to orbit**, **Mark done**, **Park** and **Drop with reason**.
+Dropping requires a reason.
+
+### Reviews
+
+- **Weekly review**: **Start review** walks through four steps: tick off finished
+  work, update statuses, pick 3 tasks, drop anything stuck. It's due seven
+  calendar days after your last one, so a Sunday habit stays on Sundays. It only
+  counts as done when you press **Finish review**, but changes made along the way
+  are saved as you go.
+- **Parked review**: from the 1st of each month, if anything is parked, a prompt
+  asks you to move projects to Next or drop them.
+
+Review dates stay on each device and in backups; they don't sync through the
+cloud. Projects, tasks and tracks do when sync is on, with the newest copy of a
+project winning. If you log sessions on two devices before they sync, one
+device's new entries can be lost.
 
 ## Finding notes
 

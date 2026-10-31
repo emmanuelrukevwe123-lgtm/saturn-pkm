@@ -2,6 +2,7 @@ export const SCHEMA_VERSION = 3;
 export const BACKUP_FORMAT = "saturn-backup";
 export const PROJECT_STAGES = Object.freeze(["orbit", "next", "parked", "done", "dropped"]);
 export const PROJECT_CATEGORIES = Object.freeze(["career", "portfolio", "creative", "learning"]);
+export const TRACK_ROLES = Object.freeze(["main", "support", "cert", "school"]);
 
 export function newId() {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
@@ -165,6 +166,23 @@ export function normalizeTask(task, now = new Date().toISOString()) {
   };
 }
 
+export function normalizeTrack(track, now = new Date().toISOString()) {
+  if (!track || typeof track !== "object" || track.id == null) return null;
+  const progress = Number(track.progress);
+  return {
+    ...track,
+    id: track.id,
+    name: String(track.name || "Untitled track").trim() || "Untitled track",
+    role: TRACK_ROLES.includes(track.role) ? track.role : "main",
+    progress: Number.isFinite(progress) ? Math.min(100, Math.max(0, Math.round(progress))) : 0,
+    nextStep: typeof track.nextStep === "string" ? track.nextStep : "",
+    created: iso(track.created, now), updated: iso(track.updated, now),
+    revision: Number.isInteger(track.revision) ? track.revision : 0,
+    baseRevision: Number.isInteger(track.baseRevision) ? track.baseRevision : 0,
+    deviceId: typeof track.deviceId === "string" ? track.deviceId : "legacy",
+  };
+}
+
 export function normalizeHq(hq) {
   return {
     lastReviewAt: iso(hq?.lastReviewAt, ""),
@@ -179,7 +197,8 @@ export function normalizeState(input) {
   const projects = (Array.isArray(input?.projects) ? input.projects : []).map((p) => normalizeProject(p)).filter(Boolean);
   const projectIds = new Set(projects.map((p) => String(p.id)));
   const tasks = (Array.isArray(input?.tasks) ? input.tasks : []).map((t) => normalizeTask(t)).filter((t) => t && projectIds.has(String(t.projectId)));
-  return { notes, deletedNotes, projects, tasks, hq: normalizeHq(input?.hq) };
+  const tracks = (Array.isArray(input?.tracks) ? input.tracks : []).map((t) => normalizeTrack(t)).filter(Boolean);
+  return { notes, deletedNotes, projects, tasks, tracks, hq: normalizeHq(input?.hq) };
 }
 
 export function conflictCopy(record, records, deviceLabel = "external") {

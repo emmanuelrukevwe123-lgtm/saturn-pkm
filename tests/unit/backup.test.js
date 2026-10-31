@@ -19,12 +19,14 @@ describe("backup contract", () => {
       log: [{ id: "e", date: "2026-02-03T00:00:00.000Z", text: "Did it" }],
     };
     const hq = { lastReviewAt: "2026-03-01T00:00:00.000Z", lastParkedReviewAt: "", starterAddedAt: "2026-01-01T00:00:00.000Z" };
+    const track = { id: "tr", name: "AWS", role: "cert", progress: 40, nextStep: "Mock exam" };
     const backup = JSON.parse(JSON.stringify(createBackup({ appVersion: "v16", state: {
-      ...empty, projects: [project], tasks: [{ id: "t", projectId: "p", thisWeek: true }], hq,
+      ...empty, projects: [project], tasks: [{ id: "t", projectId: "p", thisWeek: true }], tracks: [track], hq,
     } })));
     const restored = prepareImport(empty, backup, "replace");
     expect(restored.projects[0]).toMatchObject(project);
     expect(restored.tasks[0].thisWeek).toBe(true);
+    expect(restored.tracks[0]).toMatchObject(track);
     expect(restored.hq).toEqual(hq);
   });
 
@@ -36,6 +38,14 @@ describe("backup contract", () => {
     expect(prepareImport(current, backup, "merge").hq).toMatchObject({
       lastReviewAt: "2026-03-01T00:00:00.000Z", lastParkedReviewAt: "2026-02-01T00:00:00.000Z",
     });
+  });
+
+  it("merges tracks by id, keeping the newer copy", () => {
+    const current = { ...empty, tracks: [{ id: "a", name: "Old", updated: "2026-01-01T00:00:00.000Z" }] };
+    const backup = createBackup({ appVersion: "v16", state: { ...empty, tracks: [
+      { id: "a", name: "New", updated: "2026-02-01T00:00:00.000Z" }, { id: "b", name: "Added" },
+    ] } });
+    expect(prepareImport(current, backup, "merge").tracks.map((track) => track.name)).toEqual(["New", "Added"]);
   });
 
   it("still imports a v2 backup, adding defaults", () => {
@@ -52,6 +62,7 @@ describe("backup contract", () => {
   it("rejects a backup whose hq is not an object", () => {
     const backup = createBackup({ appVersion: "v16", state: empty });
     expect(validateBackup({ ...backup, hq: [] }).valid).toBe(false);
+    expect(validateBackup({ ...backup, tracks: {} }).valid).toBe(false);
   });
 
   it("rejects corrupt data before preparing mutation", () => {

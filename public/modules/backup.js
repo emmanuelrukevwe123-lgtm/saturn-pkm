@@ -17,7 +17,9 @@ export function validateBackup(input) {
     if (!Array.isArray(input?.[key])) errors.push(`${key} must be an array.`);
     else if (input[key].length > MAX_RECORDS) errors.push(`${key} contains too many records.`);
   }
-  // Added in schema v3, so older backups legitimately omit it.
+  // Added in schema v3, so older backups legitimately omit these.
+  if (input?.tracks != null && !Array.isArray(input.tracks)) errors.push("tracks must be an array.");
+  else if (input?.tracks?.length > MAX_RECORDS) errors.push("tracks contains too many records.");
   if (input?.hq != null && (typeof input.hq !== "object" || Array.isArray(input.hq))) errors.push("hq must be an object.");
   for (const note of [...(input?.notes || []), ...(input?.deletedNotes || [])]) {
     if (note?.id == null || !validString(note?.title, 500) || !validString(note?.body)) errors.push("A note is invalid or too large.");
@@ -41,6 +43,7 @@ export function createBackup({ appVersion, notebook, state, images = [], setting
     deletedNotes: clean.deletedNotes,
     projects: clean.projects,
     tasks: clean.tasks,
+    tracks: clean.tracks,
     hq: clean.hq,
     images,
     settings,
@@ -78,6 +81,7 @@ export function prepareImport(current, envelope, mode) {
     deletedNotes: mergeById(current.deletedNotes, incoming.deletedNotes),
     projects: mergeById(current.projects, incoming.projects),
     tasks: mergeById(current.tasks, incoming.tasks),
+    tracks: mergeById(current.tracks || [], incoming.tracks),
     hq: mergeHq(current.hq, incoming.hq),
   };
   // ID collisions between active and deleted notes are resolved in favour of
@@ -94,6 +98,7 @@ export function summarizeImport(current, next, images = []) {
     deletedNotes: next.deletedNotes.length,
     projects: next.projects.length,
     tasks: next.tasks.length,
+    tracks: next.tracks.length,
     images: images.length,
     addedNotes: Math.max(0, next.notes.length - current.notes.length),
   };

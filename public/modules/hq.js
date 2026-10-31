@@ -1,4 +1,6 @@
-import { PROJECT_CATEGORIES, PROJECT_STAGES, isHttpUrl, newId, normalizeHq, normalizeProject, sameId } from "./domain.js";
+import {
+  PROJECT_CATEGORIES, PROJECT_STAGES, TRACK_ROLES, isHttpUrl, newId, normalizeHq, normalizeProject, normalizeTrack, sameId,
+} from "./domain.js";
 
 /* ============================================================
    Saturn HQ rules. Every function is pure: it reads a state and
@@ -215,6 +217,32 @@ export function parkedReviewDue(hq, now = new Date()) {
   const lastDate = new Date(last);
   const date = new Date(now);
   return lastDate.getFullYear() !== date.getFullYear() || lastDate.getMonth() !== date.getMonth();
+}
+
+export function activeTracks(state) {
+  return live(state.tracks);
+}
+
+export function addTrack(state, { name, role, now = nowIso(), deviceId } = {}) {
+  const clean = String(name ?? "").trim();
+  if (!clean) return { error: "empty_name" };
+  const track = normalizeTrack({
+    id: newId(), name: clean, role: TRACK_ROLES.includes(role) ? role : "main", progress: 0, nextStep: "",
+    created: now, updated: now, revision: 0, baseRevision: 0, deviceId,
+  }, now);
+  return { ...state, tracks: [...(state.tracks || []), track] };
+}
+
+export function updateTrack(state, id, patch, { now = nowIso(), deviceId } = {}) {
+  const track = activeTracks(state).find((item) => sameId(item.id, id));
+  if (!track) return { error: "not_found" };
+  const next = normalizeTrack(touched({ ...track, ...patch }, now, deviceId), now);
+  return { ...state, tracks: state.tracks.map((item) => (sameId(item.id, id) ? next : item)) };
+}
+
+// A tombstone, like deleted projects, so sync can't bring the track back.
+export function removeTrack(state, id, { now = nowIso(), deviceId } = {}) {
+  return updateTrack(state, id, { tombstone: true, deletedAt: now }, { now, deviceId });
 }
 
 export function markReviewed(state, field, now = nowIso()) {

@@ -6,6 +6,7 @@ export const BASE_KEYS = Object.freeze({
   projects: "saturn-pkm-planner-projects",
   tasks: "saturn-pkm-planner-tasks",
   hq: "saturn-pkm-hq",
+  tracks: "saturn-pkm-tracks",
   theme: "saturn-pkm-theme",
 });
 
@@ -22,6 +23,7 @@ export function notebookKeys(uid = "") {
     projects: scopedKey(BASE_KEYS.projects, uid),
     tasks: scopedKey(BASE_KEYS.tasks, uid),
     hq: scopedKey(BASE_KEYS.hq, uid),
+    tracks: scopedKey(BASE_KEYS.tracks, uid),
   };
 }
 
@@ -50,6 +52,7 @@ export function readNotebook(storage, keys) {
     projects: readArray(storage, keys.projects),
     tasks: readArray(storage, keys.tasks),
     hq: readObject(storage, keys.hq),
+    tracks: readArray(storage, keys.tracks),
   });
 }
 
@@ -81,6 +84,7 @@ export function writeNotebook(storage, keys, state) {
     [keys.projects, JSON.stringify(normalized.projects)],
     [keys.tasks, JSON.stringify(normalized.tasks)],
     [keys.hq, JSON.stringify(normalized.hq)],
+    [keys.tracks, JSON.stringify(normalized.tracks)],
     [META_KEY, JSON.stringify({ schemaVersion: SCHEMA_VERSION, migratedAt: new Date().toISOString() })],
   ]);
   return normalized;

@@ -9,7 +9,7 @@ class MemoryStorage {
   removeItem(key) { this.map.delete(key); }
 }
 
-const keys = { notes: "n", deletedNotes: "d", projects: "p", tasks: "t", hq: "h" };
+const keys = { notes: "n", deletedNotes: "d", projects: "p", tasks: "t", hq: "h", tracks: "k" };
 
 describe("versioned persistence", () => {
   it("migrates legacy arrays without removing their keys", () => {
@@ -47,6 +47,7 @@ describe("versioned persistence", () => {
     const lastReviewAt = "2026-11-01T10:00:00.000Z";
     writeNotebook(storage, keys, { hq: { lastReviewAt } });
     expect(readNotebook(storage, keys).hq.lastReviewAt).toBe(lastReviewAt);
+    expect(readNotebook(storage, keys).tracks).toEqual([]);
   });
 
   it("rolls every key back when one write fails", () => {

@@ -7,7 +7,8 @@ plain HTML, CSS, and JavaScript modules, with a small authenticated serverless A
 Notes link to each other with `[[Note title]]`, show backlinks automatically,
 render as a live **Graph**, and can hold **images** (compressed, stored in
 IndexedDB, resizable by dragging). A **Planner** adds kanban project boards
-with drag-and-drop tasks that link back to notes. Deleted notes rest in a
+with drag-and-drop tasks that link back to notes, and **Orbit** keeps you on two
+active projects at a time, with parked ideas, session logs and weekly reviews. Deleted notes rest in a
 recoverable Dead Stars bin. Data is local-first; portable `.saturn` backups include records and images, and optional owner-only Firebase sync ships behind a feature flag.
 
 The UI is the Saturn design export's layout (`design/Saturn.html`) in a retro

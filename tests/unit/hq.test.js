@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { normalizeState } from "../../public/modules/domain.js";
 import {
-  MAX_ORBIT, STARTER_PROJECTS, addLink, addLogEntry, addStarterProjects, canMoveToOrbit, clearFinishedThisWeek,
+  MAX_ORBIT, STARTER_PROJECTS, activeTracks, addLink, addLogEntry, addStarterProjects, addTrack, canMoveToOrbit,
+  clearFinishedThisWeek, removeTrack, updateTrack,
   markReviewed, moveStage, orbitProjects, parkIdea, parkedReviewDue, projectProgress, removeLink, reviewDue,
   reviewStatus, setThisWeek, thisWeekTasks, updateProjectDetails,
 } from "../../public/modules/hq.js";
@@ -17,8 +18,8 @@ function deepFreeze(value) {
 }
 
 // Frozen on purpose: any rule that tries to mutate its input throws in a module.
-function stateWith({ projects = [], tasks = [], hq } = {}) {
-  return deepFreeze(normalizeState({ projects, tasks, hq }));
+function stateWith({ projects = [], tasks = [], tracks = [], hq } = {}) {
+  return deepFreeze(normalizeState({ projects, tasks, tracks, hq }));
 }
 
 const project = (id, stage = "next", extra = {}) => ({ id, name: `Project ${id}`, stage, updated: "2026-01-01T00:00:00.000Z", ...extra });
@@ -266,6 +267,29 @@ describe("parkedReviewDue", () => {
   it("is due from the 1st of the next month, and across a new year", () => {
     expect(parkedReviewDue({ lastParkedReviewAt: local(10, 31).toISOString() }, local(11, 1))).toBe(true);
     expect(parkedReviewDue({ lastParkedReviewAt: new Date(2026, 10, 20).toISOString() }, new Date(2027, 10, 5))).toBe(true);
+  });
+});
+
+describe("learning tracks", () => {
+  const state = stateWith({ tracks: [{ id: "a", name: "AWS", role: "cert", progress: 10, revision: 2 }] });
+
+  it("adds a track and rejects an empty name", () => {
+    const next = addTrack(stateWith(), { name: " Linux ", role: "support", now: NOW });
+    expect(next.tracks[0]).toMatchObject({ name: "Linux", role: "support", progress: 0, created: NOW });
+    expect(addTrack(stateWith(), { name: " " })).toEqual({ error: "empty_name" });
+  });
+
+  it("keeps progress between 0 and 100 and stamps the edit", () => {
+    expect(updateTrack(state, "a", { progress: 150 }, { now: NOW }).tracks[0]).toMatchObject({ progress: 100, updated: NOW, revision: 3 });
+    expect(updateTrack(state, "a", { progress: -5 }, { now: NOW }).tracks[0].progress).toBe(0);
+    expect(state.tracks[0].progress).toBe(10);
+  });
+
+  it("removes with a tombstone, so it can't be edited afterwards", () => {
+    const next = removeTrack(state, "a", { now: NOW });
+    expect(activeTracks(next)).toEqual([]);
+    expect(next.tracks[0]).toMatchObject({ tombstone: true, deletedAt: NOW });
+    expect(updateTrack(next, "a", { progress: 1 })).toEqual({ error: "not_found" });
   });
 });
 

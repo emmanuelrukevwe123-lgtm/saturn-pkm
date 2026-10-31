@@ -2,8 +2,9 @@ import {
   PROJECT_CATEGORIES, conflictCopy, newId, normalizeHq, normalizeTitle, renameNoteState, rewriteWikiLinks, sameId, titleKey, uniqueTitle,
 } from "./modules/domain.js";
 import {
-  MAX_ORBIT, MAX_WEEK, addLink, addLogEntry, addStarterProjects, canMoveToOrbit, moveStage, orbitProjects,
-  parkIdea, projectProgress, removeLink, reviewStatus, setThisWeek, thisWeekTasks, updateProjectDetails,
+  MAX_ORBIT, MAX_WEEK, activeTracks, addLink, addLogEntry, addStarterProjects, addTrack, canMoveToOrbit,
+  clearFinishedThisWeek, markReviewed, moveStage, orbitProjects, parkIdea, parkedReviewDue, projectProgress,
+  removeLink, removeTrack, reviewStatus, setThisWeek, thisWeekTasks, updateProjectDetails, updateTrack,
 } from "./modules/hq.js";
 import {
   migrateLegacyStorage, readNotebook, writeNotebook,
@@ -66,6 +67,7 @@ const THEME_KEY = "saturn-pkm-theme";
 const PLANNER_PROJECTS_KEY = "saturn-pkm-planner-projects";
 const PLANNER_TASKS_KEY = "saturn-pkm-planner-tasks";
 const HQ_KEY = "saturn-pkm-hq";
+const TRACKS_KEY = "saturn-pkm-tracks";
 const FIREBASE_SDK_VERSION = "12.15.0";
 
 // ---------- State ----------
@@ -93,6 +95,8 @@ let plannerTasks = [];          // flat task list; each task carries projectId
 let plannerProjectsKey = PLANNER_PROJECTS_KEY;
 let plannerTasksKey = PLANNER_TASKS_KEY;
 let hqKey = HQ_KEY;
+let tracksKey = TRACKS_KEY;
+let tracks = [];                // Saturn HQ learning tracks
 let hq = normalizeHq();         // Saturn HQ review dates and starter marker
 let activeProjectId = null;     // which board is open
 let taskDetailId = null;        // which task is open in the detail panel
@@ -240,7 +244,7 @@ function saveDeleted() {
 function currentKeys() {
   return {
     notes: storageKey, deletedNotes: deletedStorageKey,
-    projects: plannerProjectsKey, tasks: plannerTasksKey, hq: hqKey,
+    projects: plannerProjectsKey, tasks: plannerTasksKey, hq: hqKey, tracks: tracksKey,
   };
 }
 
@@ -251,11 +255,12 @@ function load() {
   projects = migrated.state.projects;
   plannerTasks = migrated.state.tasks;
   hq = migrated.state.hq;
+  tracks = migrated.state.tracks;
   dark = localStorage.getItem(THEME_KEY) === "dark";
 }
 
 function currentState() {
-  return { notes, deletedNotes, projects, tasks: plannerTasks, hq };
+  return { notes, deletedNotes, projects, tasks: plannerTasks, tracks, hq };
 }
 
 function applyState(state) {
@@ -264,6 +269,7 @@ function applyState(state) {
   projects = state.projects;
   plannerTasks = state.tasks;
   hq = state.hq;
+  tracks = state.tracks;
 }
 
 function persistAll({ announce = true } = {}) {
@@ -1195,7 +1201,7 @@ importButton?.addEventListener("click", async () => {
     const next = prepareImport(currentState(), envelope, mode);
     const summary = summarizeImport(currentState(), next, envelope.images);
     importSummaryEl.hidden = false;
-    importSummaryEl.textContent = `${mode === "replace" ? "Replace with" : "Restore"} ${summary.notes} active notes, ${summary.deletedNotes} deleted notes, ${summary.projects} projects, ${summary.tasks} tasks, and ${summary.images} images.`;
+    importSummaryEl.textContent = `${mode === "replace" ? "Replace with" : "Restore"} ${summary.notes} active notes, ${summary.deletedNotes} deleted notes, ${summary.projects} projects, ${summary.tasks} tasks, ${summary.tracks} learning tracks, and ${summary.images} images.`;
     if (!confirm(`${importSummaryEl.textContent}\n\nContinue?`)) return;
 
     if (!imgDB) imgDB = await openImageDB();
@@ -1324,7 +1330,9 @@ function copyLocalDeletedToUserStore(userKey) {
   if (localDeleted.length) localStorage.setItem(userKey, JSON.stringify(localDeleted));
 }
 
-function copyLocalPlannerToUserStore(projectsKey, tasksKey, userHqKey) {
+function copyLocalPlannerToUserStore(projectsKey, tasksKey, userHqKey, userTracksKey) {
+  if (!localStorage.getItem(userTracksKey) && localStorage.getItem(TRACKS_KEY))
+    localStorage.setItem(userTracksKey, localStorage.getItem(TRACKS_KEY));
   if (!localStorage.getItem(userHqKey) && localStorage.getItem(HQ_KEY))
     localStorage.setItem(userHqKey, localStorage.getItem(HQ_KEY));
   if (!localStorage.getItem(projectsKey)) {
@@ -1344,10 +1352,11 @@ function switchNotebookForUser(user) {
   const nextProjectsKey = scopedStorageKey(PLANNER_PROJECTS_KEY, user);
   const nextTasksKey = scopedStorageKey(PLANNER_TASKS_KEY, user);
   const nextHqKey = scopedStorageKey(HQ_KEY, user);
+  const nextTracksKey = scopedStorageKey(TRACKS_KEY, user);
   if (user) {
     copyLocalNotesToUserStore(nextKey);
     copyLocalDeletedToUserStore(nextDeletedKey);
-    copyLocalPlannerToUserStore(nextProjectsKey, nextTasksKey, nextHqKey);
+    copyLocalPlannerToUserStore(nextProjectsKey, nextTasksKey, nextHqKey, nextTracksKey);
   }
 
   if (nextKey !== storageKey || nextDeletedKey !== deletedStorageKey) {
@@ -1356,6 +1365,7 @@ function switchNotebookForUser(user) {
     plannerProjectsKey = nextProjectsKey;
     plannerTasksKey = nextTasksKey;
     hqKey = nextHqKey;
+    tracksKey = nextTracksKey;
     selectedId = null;
     noteDraft = null;
     activeTag = null;
@@ -1397,6 +1407,7 @@ let cloudStatus = "off";             // off | syncing | synced | error | unavail
 let cloudNoteStamp = new Map();      // note id -> timestamp last seen in cloud
 let cloudProjectStamp = new Map();
 let cloudTaskStamp = new Map();
+let cloudTrackStamp = new Map();
 let cloudPushTimer = null;
 let cloudLastPull = 0;
 
@@ -1489,7 +1500,7 @@ function withTimeout(promise, ms) {
 
 // Merge cloud + local: per note id, the newest timestamp wins; when an id
 // appears both active and in the bin, the later event decides where it lives.
-function mergeCloudState(cloudNotes, cloudProjects, cloudTasks) {
+function mergeCloudState(cloudNotes, cloudProjects, cloudTasks, cloudTracks) {
   const localNotes = [
     ...notes.map((note) => ({ ...note, tombstone: false })),
     ...deletedNotes.map((note) => ({ ...note, tombstone: true })),
@@ -1500,6 +1511,7 @@ function mergeCloudState(cloudNotes, cloudProjects, cloudTasks) {
   deletedNotes = mergedNotes.filter((note) => note.tombstone || note.deletedAt);
   deletedNotes = deletedNotes.filter((note) => !(note.purged && tombstoneExpired(note)));
   projects = mergeSyncCollection(projects, cloudProjects, "project");
+  tracks = mergeSyncCollection(tracks, cloudTracks, "track");
   const mergedTasks = mergeSyncCollection(plannerTasks, cloudTasks, "task");
   const taskConflict = mergedTasks.length > new Set([...plannerTasks, ...cloudTasks].map((task) => String(task.id))).size;
   plannerTasks = mergedTasks;
@@ -1516,18 +1528,20 @@ async function pullAndMergeCloud() {
     const uid = currentUser.uid;
     const migrationKey = `saturn-pkm-cloud-migrated:${uid}`;
     const needsLegacy = !localStorage.getItem(migrationKey);
-    const [noteSnap, projectSnap, taskSnap, binSnap] = await withTimeout(Promise.all([
+    const [noteSnap, projectSnap, taskSnap, trackSnap, binSnap] = await withTimeout(Promise.all([
       cloudApi.getDocs(cloudApi.collection(cloudApi.db, "users", uid, "notes")),
       cloudApi.getDocs(cloudApi.collection(cloudApi.db, "users", uid, "projects")),
       cloudApi.getDocs(cloudApi.collection(cloudApi.db, "users", uid, "tasks")),
+      cloudApi.getDocs(cloudApi.collection(cloudApi.db, "users", uid, "tracks")),
       needsLegacy
         ? cloudApi.getDocs(cloudApi.collection(cloudApi.db, "users", uid, "bin"))
         : Promise.resolve({ forEach() {} }),
     ]), 15000);
-    const rawNotes = [], rawProjects = [], rawTasks = [], rawBin = [];
+    const rawNotes = [], rawProjects = [], rawTasks = [], rawTracks = [], rawBin = [];
     noteSnap.forEach((d) => rawNotes.push(d.data()));
     projectSnap.forEach((d) => rawProjects.push(d.data()));
     taskSnap.forEach((d) => rawTasks.push(d.data()));
+    trackSnap.forEach((d) => rawTracks.push(d.data()));
     binSnap.forEach((d) => rawBin.push(d.data()));
     // Reuse the localStorage normalizer so odd cloud docs can't crash us
     const cloudNotes = parseStoredNotes(JSON.stringify([
@@ -1540,8 +1554,9 @@ async function pullAndMergeCloud() {
     cloudNoteStamp = new Map(cloudNotes.map((n) => [String(n.id), noteTimestamp(n)]));
     cloudProjectStamp = new Map(cloudProjects.map((n) => [String(n.id), noteTimestamp(n)]));
     cloudTaskStamp = new Map(cloudTasks.map((n) => [String(n.id), noteTimestamp(n)]));
+    cloudTrackStamp = new Map(rawTracks.map((n) => [String(n.id), noteTimestamp(n)]));
 
-    const conflictCreated = mergeCloudState(cloudNotes, cloudProjects, cloudTasks);
+    const conflictCreated = mergeCloudState(cloudNotes, cloudProjects, cloudTasks, rawTracks);
     if (needsLegacy) localStorage.setItem(migrationKey, new Date().toISOString());
     cloudLastPull = Date.now();
     cloudStatus = conflictCreated ? "conflict" : "synced";
@@ -1580,6 +1595,7 @@ async function pushToCloud() {
     syncCollection([...notes, ...deletedNotes], "notes", "note", cloudNoteStamp);
     syncCollection(projects, "projects", "project", cloudProjectStamp);
     syncCollection(plannerTasks, "tasks", "task", cloudTaskStamp);
+    syncCollection(tracks, "tracks", "track", cloudTrackStamp);
     await withTimeout(Promise.all(jobs), 15000);
     await withTimeout(syncCloudImages(), 30000);
     cloudStatus = "synced";
@@ -1594,6 +1610,7 @@ function resetCloudState() {
   cloudNoteStamp = new Map();
   cloudProjectStamp = new Map();
   cloudTaskStamp = new Map();
+  cloudTrackStamp = new Map();
   clearTimeout(cloudPushTimer);
 }
 
@@ -2986,7 +3003,9 @@ function renderOrbit() {
   renderWeek();
   renderParkPills();
   $("#hq-review-status").textContent = REVIEW_LABELS[reviewStatus(hq)];
+  $("#hq-parked-prompt").hidden = !(parkedReviewDue(hq) && projectsInStage("parked").length);
   renderProjectColumns();
+  renderTracks();
 }
 
 // --- Project header on the board ---
@@ -3234,6 +3253,260 @@ $("#hq-parked-more").addEventListener("click", () => {
 
 $("#hq-starter-add").addEventListener("click", () => {
   applyHqRule(addStarterProjects(currentState(), hqOptions()));
+});
+
+// --- Learning tracks ---
+const TRACK_ROLE_LABELS = { main: "Main", support: "Support", cert: "Certification", school: "School" };
+
+function renderTracks() {
+  const list = $("#hq-tracks");
+  list.innerHTML = "";
+  const tracks = activeTracks(currentState());
+  for (const track of tracks) {
+    const card = hqEl("article", "hq-track");
+    card.dataset.track = track.id;
+    const head = hqEl("div", "break-head");
+    const title = hqEl("h3", "hq-mini-title", track.name);
+    head.append(title, hqEl("span", "chip chip-muted", TRACK_ROLE_LABELS[track.role]));
+    const bar = hqEl("div", "bar-track");
+    bar.setAttribute("role", "progressbar");
+    bar.setAttribute("aria-label", `${track.name} progress`);
+    bar.setAttribute("aria-valuemin", "0");
+    bar.setAttribute("aria-valuemax", "100");
+    bar.setAttribute("aria-valuenow", String(track.progress));
+    const fill = hqEl("div", "bar-fill");
+    fill.style.width = `${track.progress}%`;
+    fill.style.background = "var(--accent)";
+    bar.appendChild(fill);
+
+    const controls = hqEl("div", "hq-track-controls");
+    const percentLabel = hqEl("label", "hq-track-percent");
+    const percent = hqEl("input", "field");
+    percent.type = "number";
+    percent.min = "0";
+    percent.max = "100";
+    percent.value = String(track.progress);
+    percent.dataset.trackField = "progress";
+    percent.setAttribute("aria-label", `${track.name} progress percent`);
+    percentLabel.append(percent, "%");
+    const nextStep = hqEl("input", "field");
+    nextStep.value = track.nextStep;
+    nextStep.placeholder = "Next step";
+    nextStep.dataset.trackField = "nextStep";
+    nextStep.setAttribute("aria-label", `${track.name} next step`);
+    const remove = hqEl("button", "row-delete", "Remove");
+    remove.type = "button";
+    remove.dataset.removeTrack = track.id;
+    remove.setAttribute("aria-label", `Remove ${track.name}`);
+    controls.append(percentLabel, nextStep, remove);
+    card.append(head, bar, controls);
+    list.appendChild(card);
+  }
+  $("#hq-tracks-empty").hidden = tracks.length > 0;
+}
+
+const trackRoleSelect = $("#hq-track-role");
+for (const [role, label] of Object.entries(TRACK_ROLE_LABELS)) trackRoleSelect.add(new Option(label, role));
+
+$("#hq-track-name").addEventListener("input", (event) => {
+  $("#hq-track-add").disabled = !event.target.value.trim();
+});
+$("#hq-track-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const error = applyHqRule(addTrack(currentState(), {
+    name: $("#hq-track-name").value, role: trackRoleSelect.value, ...hqOptions(),
+  }));
+  if (error) return;
+  $("#hq-track-name").value = "";
+  $("#hq-track-add").disabled = true;
+});
+$("#hq-tracks").addEventListener("change", (event) => {
+  const field = event.target.dataset.trackField;
+  if (!field) return;
+  const card = event.target.closest("[data-track]");
+  const result = updateTrack(currentState(), card.dataset.track, { [field]: event.target.value }, hqOptions());
+  if (result.error) return;
+  // Updated in place: rebuilding the list here would throw away the focus that
+  // Tab is moving to the next field.
+  applyState(result);
+  persistAll();
+  const { progress } = activeTracks(currentState()).find((track) => sameId(track.id, card.dataset.track));
+  card.querySelector("[data-track-field='progress']").value = String(progress);
+  card.querySelector(".bar-track").setAttribute("aria-valuenow", String(progress));
+  card.querySelector(".bar-fill").style.width = `${progress}%`;
+});
+$("#hq-tracks").addEventListener("click", (event) => {
+  const remove = event.target.closest("[data-remove-track]");
+  if (!remove) return;
+  if (!confirm("Remove this learning track? This can't be undone.")) return;
+  applyHqRule(removeTrack(currentState(), remove.dataset.removeTrack, hqOptions()));
+});
+
+// --- Weekly review ---
+const reviewDialog = $("#hq-review-dialog");
+const REVIEW_STEPS = [
+  { title: "Tick off finished work", hint: "Tick anything you finished this week." },
+  { title: "Update statuses", hint: "Bring the tasks in your orbit projects up to date." },
+  { title: "Pick 3 tasks", hint: "Finished tasks have left the list, which opens their slots." },
+  { title: "Drop anything stuck", hint: "If a project has stopped moving, let it go. A reason is required." },
+];
+let reviewStep = 0;
+
+function openTasksFor(projectList) {
+  const ids = new Set(projectList.map((project) => String(project.id)));
+  return plannerTasks.filter((task) => !task.tombstone && task.status !== "done" && ids.has(String(task.projectId)));
+}
+
+function reviewMessage(text) {
+  return hqEl("p", "empty small", text);
+}
+
+function renderReviewTicks(body) {
+  const tasks = openTasksFor(orbitProjects(currentState()));
+  const weekOnly = thisWeekTasks(currentState()).filter((task) => task.status !== "done");
+  const shown = [...new Map([...weekOnly, ...tasks].map((task) => [String(task.id), task])).values()];
+  if (!shown.length) { body.appendChild(reviewMessage("Nothing open to tick off.")); return; }
+  const list = hqEl("ul", "hq-check-list");
+  for (const task of shown) {
+    const item = hqEl("li", "hq-check");
+    const label = hqEl("label");
+    const box = hqEl("input");
+    box.type = "checkbox";
+    box.dataset.reviewDone = task.id;
+    label.append(box, hqEl("span", "hq-check-text", task.title), hqEl("span", "hq-check-project", projectName(task.projectId)));
+    item.appendChild(label);
+    list.appendChild(item);
+  }
+  body.appendChild(list);
+}
+
+function renderReviewStatuses(body) {
+  const tasks = openTasksFor(orbitProjects(currentState()));
+  if (!tasks.length) { body.appendChild(reviewMessage("No open tasks in your orbit projects.")); return; }
+  const list = hqEl("ul", "hq-check-list");
+  for (const task of tasks) {
+    const item = hqEl("li", "hq-status-row");
+    const name = hqEl("span", "hq-check-text", task.title);
+    const select = hqEl("select", "field hq-status-select");
+    select.setAttribute("aria-label", `Status of ${task.title}`);
+    select.dataset.reviewStatus = task.id;
+    select.add(new Option("To do", "todo"));
+    select.add(new Option("In progress", "doing"));
+    select.add(new Option("Done", "done"));
+    select.value = task.status;
+    item.append(name, select);
+    list.appendChild(item);
+  }
+  body.appendChild(list);
+}
+
+function renderReviewPick(body) {
+  const list = hqEl("ul", "hq-check-list");
+  list.addEventListener("change", (event) => togglePick(event, list, $("#hq-review-hint")));
+  body.appendChild(list);
+  renderWeekOptions(list, $("#hq-review-hint"));
+}
+
+function renderReviewDrops(body) {
+  const candidates = [...orbitProjects(currentState()), ...projectsInStage("next")];
+  if (!candidates.length) { body.appendChild(reviewMessage("No active projects to drop.")); return; }
+  const list = hqEl("div", "ledger");
+  for (const project of candidates) {
+    const row = hqEl("div", "hq-status-row");
+    const button = hqEl("button", "pill", "Drop");
+    button.type = "button";
+    button.dataset.reviewDrop = project.id;
+    button.setAttribute("aria-label", `Drop ${project.name}`);
+    row.append(hqEl("span", "hq-check-text", project.name), button);
+    list.appendChild(row);
+  }
+  body.appendChild(list);
+}
+
+function renderReview() {
+  const step = REVIEW_STEPS[reviewStep];
+  $("#hq-review-step").textContent = `Step ${reviewStep + 1} of ${REVIEW_STEPS.length}`;
+  $("#hq-review-heading").textContent = step.title;
+  $("#hq-review-hint").textContent = step.hint;
+  $("#hq-review-back").hidden = reviewStep === 0;
+  $("#hq-review-next").textContent = reviewStep === REVIEW_STEPS.length - 1 ? "Finish review" : "Next";
+  const body = $("#hq-review-body");
+  body.innerHTML = "";
+  [renderReviewTicks, renderReviewStatuses, renderReviewPick, renderReviewDrops][reviewStep](body);
+}
+
+function goToReviewStep(index) {
+  reviewStep = index;
+  // Entering "pick 3" is what frees the slots held by finished tasks.
+  if (reviewStep === 2) applyHqRule(clearFinishedThisWeek(currentState(), hqOptions()));
+  renderReview();
+  $("#hq-review-heading").focus();
+}
+
+$("#hq-review-start").addEventListener("click", () => {
+  reviewDialog.showModal();
+  goToReviewStep(0);
+});
+$("#hq-review-back").addEventListener("click", () => goToReviewStep(reviewStep - 1));
+$("#hq-review-next").addEventListener("click", () => {
+  if (reviewStep < REVIEW_STEPS.length - 1) { goToReviewStep(reviewStep + 1); return; }
+  applyHqRule(markReviewed(currentState(), "lastReviewAt"));
+  reviewDialog.close();
+  $("#hq-review-start").focus();
+});
+$("#hq-review-body").addEventListener("change", (event) => {
+  const done = event.target.closest("[data-review-done]");
+  if (done) moveTask(done.dataset.reviewDone, done.checked ? "done" : "todo", Infinity);
+  const status = event.target.closest("[data-review-status]");
+  if (status) moveTask(status.dataset.reviewStatus, status.value, Infinity);
+  if (done || status) renderOrbit();
+});
+$("#hq-review-body").addEventListener("click", (event) => {
+  const drop = event.target.closest("[data-review-drop]");
+  if (drop) openDropDialog(drop.dataset.reviewDrop, () => { renderReview(); $("#hq-review-heading").focus(); });
+});
+
+// --- Parked review (1st of the month) ---
+const parkedDialog = $("#hq-parked-dialog");
+
+function renderParkedOptions() {
+  const list = $("#hq-parked-options");
+  list.innerHTML = "";
+  const parked = projectsInStage("parked");
+  if (!parked.length) list.appendChild(reviewMessage("Nothing left in Parked."));
+  for (const project of parked) {
+    const row = hqEl("div", "hq-status-row");
+    const next = hqEl("button", "pill", "Move to Next");
+    next.type = "button";
+    next.dataset.parkedNext = project.id;
+    next.setAttribute("aria-label", `Move ${project.name} to Next`);
+    const drop = hqEl("button", "pill", "Drop");
+    drop.type = "button";
+    drop.dataset.parkedDrop = project.id;
+    drop.setAttribute("aria-label", `Drop ${project.name}`);
+    row.append(hqEl("span", "hq-check-text", project.name), next, drop);
+    list.appendChild(row);
+  }
+}
+
+$("#hq-parked-review").addEventListener("click", () => {
+  renderParkedOptions();
+  parkedDialog.showModal();
+});
+$("#hq-parked-options").addEventListener("click", (event) => {
+  const next = event.target.closest("[data-parked-next]");
+  if (next) {
+    applyHqRule(moveStage(currentState(), next.dataset.parkedNext, "next", hqOptions()));
+    renderParkedOptions();
+    $("#hq-parked-heading").focus();
+  }
+  const drop = event.target.closest("[data-parked-drop]");
+  if (drop) openDropDialog(drop.dataset.parkedDrop, () => { renderParkedOptions(); $("#hq-parked-heading").focus(); });
+});
+$("#hq-parked-finish").addEventListener("click", () => {
+  applyHqRule(markReviewed(currentState(), "lastParkedReviewAt"));
+  parkedDialog.close();
+  $("#hq-review-start").focus();
 });
 
 // ---------- First run: a tiny linked starter web ----------
