@@ -11,7 +11,7 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Baloo+2:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Quicksand:wght@400;500;600;700&display=swap"
     rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=15">
+  <link rel="stylesheet" href="style.css?v=16">
 </head>
 
 <body>
@@ -45,6 +45,7 @@
         <button class="nav-link" data-screen="tags">Tags</button>
         <button class="nav-link" data-screen="graph">Graph</button>
         <button class="nav-link" data-screen="progress">Progress</button>
+        <button class="nav-link" data-screen="orbit">Orbit</button>
         <button class="nav-link" data-screen="planner">Planner</button>
         <button class="nav-link" data-screen="bin">Bin</button>
         <button class="nav-link" data-screen="data">Data &amp; Sync</button>
@@ -257,6 +258,80 @@
           <div class="empty" id="bin-empty" hidden>No dead stars in the bin.</div>
         </section>
 
+        <!-- ORBIT (Saturn HQ) -->
+        <section id="screen-orbit" hidden>
+          <div class="eyebrow">Saturn HQ</div>
+          <h1 class="page-title tight">Orbit</h1>
+          <p class="page-sub">Two projects at a time. New ideas get parked, not started.</p>
+
+          <div class="panel-card hq-starter" id="hq-starter" hidden>
+            <p>Start with your project list: anything with a name you already use is skipped.</p>
+            <button id="hq-starter-add" class="pill pill-save" type="button">Add my starter projects</button>
+          </div>
+
+          <div class="hq-sections">
+            <section class="hq-section" aria-labelledby="hq-orbit-title">
+              <div class="hq-section-head">
+                <h2 class="list-heading" id="hq-orbit-title">In orbit</h2>
+                <span class="chip chip-muted" id="hq-slots"></span>
+              </div>
+              <div class="hq-orbit-grid" id="hq-orbit-cards"></div>
+            </section>
+
+            <section class="hq-section" aria-labelledby="hq-week-title">
+              <div class="hq-section-head">
+                <h2 class="list-heading" id="hq-week-title">This week's 3 tasks</h2>
+                <button id="hq-week-pick" class="pill" type="button">Pick tasks</button>
+              </div>
+              <ul class="hq-check-list" id="hq-week-list"></ul>
+              <div class="empty small" id="hq-week-empty" hidden>No tasks picked for this week.</div>
+            </section>
+
+            <section class="hq-section hq-park" aria-labelledby="hq-park-title">
+              <h2 class="list-heading" id="hq-park-title">New idea? Park it.</h2>
+              <form id="hq-park-form" class="panel-card hq-park-form">
+                <label class="form-label first" for="hq-park-name">Idea name</label>
+                <input id="hq-park-name" class="field" placeholder="What's the idea?" autocomplete="off">
+                <div class="pills" id="hq-park-category" role="group" aria-label="Category"></div>
+                <button id="hq-park-save" class="pill pill-save" type="submit" disabled>Park idea</button>
+                <div id="hq-park-status" class="save-status hq-status" role="status"></div>
+              </form>
+            </section>
+
+            <section class="hq-section" aria-labelledby="hq-review-title">
+              <h2 class="list-heading" id="hq-review-title">Weekly review</h2>
+              <div class="panel-card hq-review-card">
+                <span class="chip chip-muted" id="hq-review-status"></span>
+                <span class="spacer"></span>
+                <button id="hq-review-start" class="pill pill-save" type="button">Start review</button>
+              </div>
+            </section>
+
+            <section class="hq-section" aria-labelledby="hq-projects-title">
+              <h2 class="list-heading" id="hq-projects-title">All projects</h2>
+              <div class="hq-columns">
+                <div class="hq-column">
+                  <h3 class="kb-col-head">Next <span class="kb-count" id="hq-next-count"></span></h3>
+                  <div class="hq-column-list" id="hq-next-list"></div>
+                </div>
+                <div class="hq-column">
+                  <h3 class="kb-col-head">Parked <span class="kb-count" id="hq-parked-count"></span></h3>
+                  <div class="hq-column-list" id="hq-parked-list"></div>
+                  <button id="hq-parked-more" class="hq-more" type="button" hidden></button>
+                </div>
+                <div class="hq-column">
+                  <h3 class="kb-col-head">Done <span class="kb-count" id="hq-done-count"></span></h3>
+                  <div class="hq-column-list" id="hq-done-list"></div>
+                </div>
+              </div>
+              <details class="hq-dropped" id="hq-dropped" hidden>
+                <summary id="hq-dropped-summary"></summary>
+                <div class="ledger" id="hq-dropped-list"></div>
+              </details>
+            </section>
+          </div>
+        </section>
+
         <!-- PLANNER (project list) -->
         <section id="screen-planner" hidden>
           <div class="eyebrow">Boards</div>
@@ -310,6 +385,51 @@
           <div class="note-tools">
             <span class="spacer"></span>
             <button id="board-delete" class="pill pill-danger" type="button">Delete project</button>
+          </div>
+
+          <div class="panel-card hq-header" id="project-header">
+            <div class="hq-header-top">
+              <div class="hq-ring-large" id="ph-ring"></div>
+              <div class="hq-header-info">
+                <div class="hq-chips">
+                  <span class="chip chip-muted" id="ph-stage" tabindex="-1"></span>
+                  <span id="ph-category-chip"></span>
+                </div>
+                <label class="form-label" for="ph-next-step">Next step</label>
+                <input id="ph-next-step" class="field" placeholder="The one next thing to do" autocomplete="off">
+                <label class="form-label" for="ph-done-when">Done when</label>
+                <input id="ph-done-when" class="field" placeholder="How you'll know it's finished" autocomplete="off">
+                <label class="form-label" for="ph-category">Category</label>
+                <select id="ph-category" class="field"></select>
+              </div>
+            </div>
+
+            <div class="note-tools">
+              <button id="ph-orbit" class="pill pill-save" type="button" aria-describedby="ph-orbit-note">Move to orbit</button>
+              <button id="ph-done" class="pill" type="button">Mark done</button>
+              <button id="ph-drop" class="pill pill-danger" type="button">Drop with reason</button>
+              <button id="ph-park" class="pill" type="button">Park</button>
+            </div>
+            <p class="hq-note" id="ph-orbit-note" hidden></p>
+
+            <h2 class="form-label">Links</h2>
+            <ul class="hq-links" id="ph-links"></ul>
+            <form id="ph-link-form" class="hq-link-form" novalidate>
+              <label class="visually-hidden" for="ph-link-label">Link label</label>
+              <input id="ph-link-label" class="field" placeholder="Label" autocomplete="off">
+              <label class="visually-hidden" for="ph-link-url">Link address</label>
+              <input id="ph-link-url" class="field" type="url" placeholder="https://…" autocomplete="off">
+              <button class="pill" type="submit">Add link</button>
+            </form>
+            <p class="hq-note hq-error" id="ph-link-error" role="alert" hidden></p>
+
+            <h2 class="form-label">Session log</h2>
+            <form id="ph-log-form" class="hq-log-form">
+              <label class="visually-hidden" for="ph-log-text">Log a session</label>
+              <textarea id="ph-log-text" class="field hq-log-text" placeholder="What happened this session?"></textarea>
+              <button id="ph-log-save" class="pill" type="submit" disabled>+ Log a session</button>
+            </form>
+            <ol class="hq-log" id="ph-log"></ol>
           </div>
 
           <div class="kb-board j-scroll" id="kb-board">
@@ -416,8 +536,44 @@
     </div>
   </div>
 
-  <script src="firebase-config.js?v=15"></script>
-  <script type="module" src="script.js?v=15"></script>
+  <!-- Saturn HQ dialogs: native <dialog> traps focus and handles Esc itself -->
+  <dialog id="hq-log-dialog" class="hq-dialog" aria-labelledby="hq-log-title">
+    <form id="hq-log-form">
+      <h2 class="list-heading" id="hq-log-title">Log a session</h2>
+      <p class="hq-note" id="hq-log-project"></p>
+      <label class="form-label first" for="hq-log-text">What happened?</label>
+      <textarea id="hq-log-text" class="field hq-log-text"></textarea>
+      <div class="note-tools">
+        <button id="hq-log-save" class="pill pill-save" type="submit" disabled>Save to log</button>
+        <button class="pill" type="button" data-close-dialog>Cancel</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="hq-drop-dialog" class="hq-dialog" aria-labelledby="hq-drop-title">
+    <form id="hq-drop-form">
+      <h2 class="list-heading" id="hq-drop-title">Drop project</h2>
+      <p class="hq-note" id="hq-drop-project"></p>
+      <label class="form-label first" for="hq-drop-reason">Why are you dropping it?</label>
+      <input id="hq-drop-reason" class="field" autocomplete="off">
+      <div class="note-tools">
+        <button id="hq-drop-save" class="pill pill-save" type="submit" disabled>Drop project</button>
+        <button class="pill" type="button" data-close-dialog>Cancel</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="hq-week-dialog" class="hq-dialog" aria-labelledby="hq-week-dialog-title">
+    <h2 class="list-heading" id="hq-week-dialog-title">Pick this week's tasks</h2>
+    <p class="hq-note" id="hq-week-count" role="status"></p>
+    <ul class="hq-check-list" id="hq-week-options"></ul>
+    <div class="note-tools">
+      <button class="pill pill-save" type="button" data-close-dialog>Done</button>
+    </div>
+  </dialog>
+
+  <script src="firebase-config.js?v=16"></script>
+  <script type="module" src="script.js?v=16"></script>
 </body>
 
 </html>

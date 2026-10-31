@@ -203,6 +203,12 @@ export function reviewDue(hq, now = new Date()) {
   return !last || daysBetween(last, now) >= 7;
 }
 
+export function reviewStatus(hq, now = new Date()) {
+  if (!reviewDue(hq, now)) return "done";
+  if (new Date(now).getDay() === 0) return "due_today";
+  return normalizeHq(hq).lastReviewAt ? "overdue" : "due_sunday";
+}
+
 export function parkedReviewDue(hq, now = new Date()) {
   const last = normalizeHq(hq).lastParkedReviewAt;
   if (!last) return true;

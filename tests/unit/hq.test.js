@@ -3,7 +3,7 @@ import { normalizeState } from "../../public/modules/domain.js";
 import {
   MAX_ORBIT, STARTER_PROJECTS, addLink, addLogEntry, addStarterProjects, canMoveToOrbit, clearFinishedThisWeek,
   markReviewed, moveStage, orbitProjects, parkIdea, parkedReviewDue, projectProgress, removeLink, reviewDue,
-  setThisWeek, thisWeekTasks, updateProjectDetails,
+  reviewStatus, setThisWeek, thisWeekTasks, updateProjectDetails,
 } from "../../public/modules/hq.js";
 
 const NOW = "2026-06-10T12:00:00.000Z";
@@ -241,6 +241,16 @@ describe("reviewDue", () => {
 
   it("is due once 7 or more days have passed", () => {
     expect(reviewDue(reviewedOn(local(10, 1)), local(10, 21))).toBe(true);
+  });
+});
+
+describe("reviewStatus", () => {
+  it("names each state for the review card", () => {
+    expect(reviewStatus({}, local(11, 4))).toBe("due_sunday");
+    expect(reviewStatus({}, local(11, 8))).toBe("due_today");
+    expect(reviewStatus({ lastReviewAt: local(11, 2).toISOString() }, local(11, 4))).toBe("done");
+    expect(reviewStatus({ lastReviewAt: local(10, 1).toISOString() }, local(11, 4))).toBe("overdue");
+    expect(reviewStatus({ lastReviewAt: local(11, 1).toISOString() }, local(11, 8))).toBe("due_today");
   });
 });
 

@@ -1,6 +1,10 @@
 import {
-  conflictCopy, newId, normalizeHq, normalizeTitle, renameNoteState, rewriteWikiLinks, sameId, titleKey, uniqueTitle,
+  PROJECT_CATEGORIES, conflictCopy, newId, normalizeHq, normalizeTitle, renameNoteState, rewriteWikiLinks, sameId, titleKey, uniqueTitle,
 } from "./modules/domain.js";
+import {
+  MAX_ORBIT, MAX_WEEK, addLink, addLogEntry, addStarterProjects, canMoveToOrbit, moveStage, orbitProjects,
+  parkIdea, projectProgress, removeLink, reviewStatus, setThisWeek, thisWeekTasks, updateProjectDetails,
+} from "./modules/hq.js";
 import {
   migrateLegacyStorage, readNotebook, writeNotebook,
 } from "./modules/persistence.js";
@@ -19,7 +23,7 @@ import { mergeSyncCollection, syncRecord, tombstoneExpired } from "./modules/clo
    Saturn design export's Today / Topics / Progress / Add views.
    ============================================================ */
 
-const APP_VERSION = "v15";
+const APP_VERSION = "v16";
 // Cloud sync is parked: the Firestore (default) database doesn't exist in the
 // project yet. All sync code below stays dormant behind this flag — to bring
 // it back, create the database (docs/GOOGLE_AUTH.md §5) and flip to true.
@@ -116,6 +120,7 @@ const screens = {
   progress: $("#screen-progress"),
   bin: $("#screen-bin"),
   add: $("#screen-add"),
+  orbit: $("#screen-orbit"),
   planner: $("#screen-planner"),
   board: $("#screen-board"),
   data: $("#screen-data"),
@@ -766,7 +771,7 @@ function restoreUIState() {
     activeProjectId = saved.activeProjectId;
     return showScreen("board");
   }
-  if (["home", "tags", "graph", "progress", "planner", "bin", "add", "data"].includes(saved.screen))
+  if (["home", "tags", "graph", "progress", "orbit", "planner", "bin", "add", "data"].includes(saved.screen))
     return showScreen(saved.screen);
   return showScreen("home");
 }
@@ -779,6 +784,7 @@ function renderScreen() {
     else if (screen === "graph") renderGraph();
     else if (screen === "progress") renderProgress();
     else if (screen === "bin") renderBin();
+    else if (screen === "orbit") renderOrbit();
     else if (screen === "planner") renderPlanner();
     else if (screen === "board") renderBoard();
     else if (screen === "data") renderDataScreen();
@@ -2433,6 +2439,7 @@ function renderBoard() {
   const project = getProject(activeProjectId);
   if (!project) { showScreen("planner"); return; }
   if (document.activeElement !== boardTitleInput) boardTitleInput.value = project.name;
+  renderProjectHeader(project);
   for (const col of kbBoard.querySelectorAll(".kb-col")) {
     const status = col.dataset.status;
     const cardsEl = col.querySelector(".kb-cards");
@@ -2793,6 +2800,440 @@ taskPop.addEventListener("keydown", (event) => {
   const first = focusable[0], last = focusable.at(-1);
   if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
   else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+});
+
+// ---------- Saturn HQ: Orbit screen and project header ----------
+const CATEGORY_LABELS = { career: "Career", portfolio: "Portfolio", creative: "Creative", learning: "Learning" };
+const STAGE_LABELS = { orbit: "In orbit", next: "Next", parked: "Parked", done: "Done", dropped: "Dropped" };
+const PARKED_PREVIEW = 3;
+const ORBIT_FULL_NOTE = "Both orbit slots are taken. Mark a project done or drop it to open a slot.";
+const dialogs = { log: $("#hq-log-dialog"), drop: $("#hq-drop-dialog"), week: $("#hq-week-dialog") };
+
+let parkCategory = "portfolio";
+let parkedExpanded = false;
+let logProjectId = null;
+let dropProjectId = null;
+let afterDrop = null;
+
+function hqOptions() {
+  return { deviceId: getDeviceId() };
+}
+
+// Rules return a new state, or { error } when they refuse. Either way nothing
+// has changed yet, so a refusal needs no undo.
+function applyHqRule(result) {
+  if (result.error) return result.error;
+  applyState(result);
+  persistAll();
+  renderScreen();
+  return null;
+}
+
+function hqEl(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text != null) node.textContent = text;
+  return node;
+}
+
+function categoryChip(category) {
+  const chip = hqEl("span", "chip", CATEGORY_LABELS[category]);
+  const color = (dark ? TAG_DARK : TAG_LIGHT)[PROJECT_CATEGORIES.indexOf(category)];
+  chip.style.color = color;
+  // Fainter than tag chips in dark mode: these sit on raised cards, where the
+  // stronger tint falls below readable contrast.
+  chip.style.background = hexA(color, dark ? 0.08 : 0.13);
+  return chip;
+}
+
+function progressRing({ done, total }, size = 64) {
+  const radius = size / 2 - 6;
+  const circumference = 2 * Math.PI * radius;
+  const center = size / 2;
+  const ring = hqEl("div", "group-ring");
+  ring.style.width = ring.style.height = `${size}px`;
+  ring.setAttribute("role", "img");
+  ring.setAttribute("aria-label", `${done} of ${total} tasks done`);
+  ring.innerHTML = `
+    <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" aria-hidden="true">
+      <circle class="ring-track" cx="${center}" cy="${center}" r="${radius}" fill="none" stroke-width="6"></circle>
+      <circle class="ring-progress" cx="${center}" cy="${center}" r="${radius}" fill="none" stroke-width="6" stroke-linecap="round"
+        stroke-dasharray="${circumference}" stroke-dashoffset="${circumference * (1 - (total ? done / total : 0))}"
+        transform="rotate(-90 ${center} ${center})"></circle>
+    </svg>
+    <div class="group-pct">${done}/${total}</div>`;
+  return ring;
+}
+
+function projectsInStage(stage) {
+  return projects
+    .filter((project) => !project.tombstone && project.stage === stage)
+    .sort((a, b) => b.stageChangedAt.localeCompare(a.stageChangedAt));
+}
+
+function orbitCard(project) {
+  const card = hqEl("article", "hq-card");
+  const top = hqEl("div", "hq-card-top");
+  const info = hqEl("div", "hq-card-info");
+  info.append(categoryChip(project.category), hqEl("h3", "group-title", project.name));
+  top.append(info, progressRing(projectProgress(currentState(), project.id)));
+  const nextStep = hqEl("p", "hq-next-step", project.nextStep || "No next step yet.");
+  const actions = hqEl("div", "note-tools");
+  const open = hqEl("button", "pill pill-save", "Open");
+  open.type = "button";
+  open.dataset.open = project.id;
+  open.setAttribute("aria-label", `Open ${project.name}`);
+  const log = hqEl("button", "pill", "Log session");
+  log.type = "button";
+  log.dataset.log = project.id;
+  log.setAttribute("aria-label", `Log session for ${project.name}`);
+  actions.append(open, log);
+  card.append(top, nextStep, actions);
+  return card;
+}
+
+function renderOrbitCards() {
+  const inOrbit = orbitProjects(currentState());
+  const cards = $("#hq-orbit-cards");
+  cards.innerHTML = "";
+  for (const project of inOrbit) cards.appendChild(orbitCard(project));
+  if (canMoveToOrbit(currentState())) {
+    cards.appendChild(hqEl("div", "hq-card hq-slot", "Open slot: choose a project below and move it to orbit."));
+  } else {
+    cards.appendChild(hqEl("div", "hq-card hq-slot", "Slot locked: mark a project done or drop it to open a slot."));
+  }
+  $("#hq-slots").textContent = `${inOrbit.length} of ${MAX_ORBIT} slots used`;
+}
+
+function projectName(id) {
+  return getProject(id)?.name || "Untitled project";
+}
+
+function renderWeek() {
+  const list = $("#hq-week-list");
+  list.innerHTML = "";
+  const tasks = thisWeekTasks(currentState());
+  for (const task of tasks) {
+    const item = hqEl("li", task.status === "done" ? "hq-check is-done" : "hq-check");
+    const label = hqEl("label");
+    const box = hqEl("input");
+    box.type = "checkbox";
+    box.checked = task.status === "done";
+    box.dataset.weekTask = task.id;
+    const text = hqEl("span", "hq-check-text", task.title);
+    label.append(box, text, hqEl("span", "hq-check-project", projectName(task.projectId)));
+    item.appendChild(label);
+    list.appendChild(item);
+  }
+  $("#hq-week-empty").hidden = tasks.length > 0;
+}
+
+function renderParkPills() {
+  const pills = $("#hq-park-category");
+  pills.innerHTML = "";
+  for (const category of PROJECT_CATEGORIES) {
+    const pill = hqEl("button", category === parkCategory ? "pill active" : "pill", CATEGORY_LABELS[category]);
+    pill.type = "button";
+    pill.dataset.category = category;
+    pill.setAttribute("aria-pressed", String(category === parkCategory));
+    pills.appendChild(pill);
+  }
+}
+
+function projectMini(project) {
+  const card = hqEl("button", "hq-mini");
+  card.type = "button";
+  card.dataset.open = project.id;
+  card.append(hqEl("span", "hq-mini-title", project.name), categoryChip(project.category));
+  if (project.nextStep) card.appendChild(hqEl("span", "hq-mini-next", project.nextStep));
+  return card;
+}
+
+function renderProjectColumns() {
+  for (const stage of ["next", "parked", "done"]) {
+    const all = projectsInStage(stage);
+    const shown = stage === "parked" && !parkedExpanded ? all.slice(0, PARKED_PREVIEW) : all;
+    const list = $(`#hq-${stage}-list`);
+    list.innerHTML = "";
+    for (const project of shown) list.appendChild(projectMini(project));
+    $(`#hq-${stage}-count`).textContent = String(all.length);
+  }
+  const hiddenCount = projectsInStage("parked").length - PARKED_PREVIEW;
+  const more = $("#hq-parked-more");
+  more.hidden = hiddenCount <= 0 && !parkedExpanded;
+  more.textContent = parkedExpanded ? "Show fewer" : `Show ${hiddenCount} more`;
+  if (parkedExpanded && hiddenCount <= 0) { parkedExpanded = false; more.hidden = true; }
+
+  const dropped = projectsInStage("dropped");
+  $("#hq-dropped").hidden = dropped.length === 0;
+  $("#hq-dropped-summary").textContent = `Dropped (${dropped.length})`;
+  const droppedList = $("#hq-dropped-list");
+  droppedList.innerHTML = "";
+  for (const project of dropped) {
+    const row = hqEl("button", "hq-dropped-row");
+    row.type = "button";
+    row.dataset.open = project.id;
+    row.append(hqEl("span", "hq-mini-title", project.name), hqEl("span", "hq-mini-next", project.droppedReason));
+    droppedList.appendChild(row);
+  }
+}
+
+const REVIEW_LABELS = { done: "Done this week", due_today: "Due today", due_sunday: "Due Sunday", overdue: "Overdue" };
+
+function renderOrbit() {
+  $("#hq-starter").hidden = !!hq.starterAddedAt;
+  renderOrbitCards();
+  renderWeek();
+  renderParkPills();
+  $("#hq-review-status").textContent = REVIEW_LABELS[reviewStatus(hq)];
+  renderProjectColumns();
+}
+
+// --- Project header on the board ---
+function logDate(value) {
+  const date = new Date(value);
+  return `${MON[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
+}
+
+function setFieldValue(input, value) {
+  if (document.activeElement !== input) input.value = value;
+}
+
+function renderProjectHeader(project) {
+  const state = currentState();
+  $("#ph-ring").replaceChildren(progressRing(projectProgress(state, project.id), 112));
+  $("#ph-stage").textContent = STAGE_LABELS[project.stage];
+  $("#ph-category-chip").replaceChildren(categoryChip(project.category));
+  setFieldValue($("#ph-next-step"), project.nextStep);
+  setFieldValue($("#ph-done-when"), project.doneWhen);
+  const select = $("#ph-category");
+  if (!select.options.length) {
+    for (const category of PROJECT_CATEGORIES) select.add(new Option(CATEGORY_LABELS[category], category));
+  }
+  select.value = project.category;
+
+  const inOrbit = project.stage === "orbit";
+  const blocked = !inOrbit && !canMoveToOrbit(state);
+  $("#ph-orbit").disabled = inOrbit || blocked;
+  $("#ph-orbit-note").hidden = !blocked;
+  $("#ph-orbit-note").textContent = blocked ? ORBIT_FULL_NOTE : "";
+  $("#ph-done").disabled = project.stage === "done";
+  $("#ph-drop").disabled = project.stage === "dropped";
+  $("#ph-park").disabled = project.stage === "parked";
+
+  const links = $("#ph-links");
+  links.innerHTML = "";
+  for (const link of project.links) {
+    const item = hqEl("li");
+    const anchor = hqEl("a", "hq-link", link.label);
+    anchor.href = link.url;
+    anchor.target = "_blank";
+    anchor.rel = "noopener noreferrer";
+    const remove = hqEl("button", "row-delete", "Remove");
+    remove.type = "button";
+    remove.dataset.removeLink = link.id;
+    remove.setAttribute("aria-label", `Remove link ${link.label}`);
+    item.append(anchor, remove);
+    links.appendChild(item);
+  }
+
+  const log = $("#ph-log");
+  log.innerHTML = "";
+  for (const entry of project.log) {
+    const item = hqEl("li");
+    item.append(hqEl("span", "hq-log-date", logDate(entry.date)), hqEl("p", "hq-log-entry", entry.text));
+    log.appendChild(item);
+  }
+}
+
+function moveActiveProject(stage) {
+  const error = applyHqRule(moveStage(currentState(), activeProjectId, stage, hqOptions()));
+  if (error === "orbit_full") {
+    $("#ph-orbit-note").hidden = false;
+    $("#ph-orbit-note").textContent = ORBIT_FULL_NOTE;
+  }
+  // The pressed button may now be disabled, which would drop keyboard focus.
+  if (!error) $("#ph-stage").focus();
+}
+
+function saveProjectField(field, value) {
+  applyHqRule(updateProjectDetails(currentState(), activeProjectId, { [field]: value }, hqOptions()));
+}
+
+for (const [selector, field] of [["#ph-next-step", "nextStep"], ["#ph-done-when", "doneWhen"], ["#ph-category", "category"]]) {
+  $(selector).addEventListener("change", (event) => saveProjectField(field, event.target.value));
+}
+for (const selector of ["#ph-next-step", "#ph-done-when"]) {
+  $(selector).addEventListener("keydown", (event) => {
+    if (event.key === "Enter") event.target.blur();
+  });
+}
+$("#ph-orbit").addEventListener("click", () => moveActiveProject("orbit"));
+$("#ph-done").addEventListener("click", () => moveActiveProject("done"));
+$("#ph-park").addEventListener("click", () => moveActiveProject("parked"));
+$("#ph-drop").addEventListener("click", () => openDropDialog(activeProjectId));
+
+$("#ph-link-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const error = applyHqRule(addLink(currentState(), activeProjectId, {
+    label: $("#ph-link-label").value, url: $("#ph-link-url").value,
+  }, hqOptions()));
+  $("#ph-link-error").hidden = !error;
+  $("#ph-link-error").textContent = error ? "Enter a full web address starting with http:// or https://." : "";
+  if (!error) event.target.reset();
+});
+$("#ph-links").addEventListener("click", (event) => {
+  const remove = event.target.closest("[data-remove-link]");
+  if (remove) applyHqRule(removeLink(currentState(), activeProjectId, remove.dataset.removeLink, hqOptions()));
+});
+
+$("#ph-log-text").addEventListener("input", (event) => {
+  $("#ph-log-save").disabled = !event.target.value.trim();
+});
+$("#ph-log-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const error = applyHqRule(addLogEntry(currentState(), activeProjectId, $("#ph-log-text").value, undefined, getDeviceId()));
+  if (error) return;
+  event.target.reset();
+  $("#ph-log-save").disabled = true;
+});
+
+// --- Dialogs ---
+document.querySelectorAll(".hq-dialog").forEach((dialog) => {
+  dialog.addEventListener("click", (event) => {
+    if (event.target.closest("[data-close-dialog]")) dialog.close();
+  });
+});
+
+function openLogDialog(id) {
+  logProjectId = id;
+  $("#hq-log-project").textContent = projectName(id);
+  $("#hq-log-form").reset();
+  $("#hq-log-save").disabled = true;
+  dialogs.log.showModal();
+}
+
+$("#hq-log-text").addEventListener("input", (event) => {
+  $("#hq-log-save").disabled = !event.target.value.trim();
+});
+$("#hq-log-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  if (applyHqRule(addLogEntry(currentState(), logProjectId, $("#hq-log-text").value, undefined, getDeviceId()))) return;
+  dialogs.log.close();
+});
+// Saving rebuilds the cards, so the browser can't return focus to the old button.
+dialogs.log.addEventListener("close", () => {
+  $(`#hq-orbit-cards [data-log="${CSS.escape(String(logProjectId))}"]`)?.focus();
+});
+
+function openDropDialog(id, onDropped = null) {
+  dropProjectId = id;
+  afterDrop = onDropped;
+  $("#hq-drop-project").textContent = projectName(id);
+  $("#hq-drop-form").reset();
+  $("#hq-drop-save").disabled = true;
+  dialogs.drop.showModal();
+}
+
+$("#hq-drop-reason").addEventListener("input", (event) => {
+  $("#hq-drop-save").disabled = !event.target.value.trim();
+});
+$("#hq-drop-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const error = applyHqRule(moveStage(currentState(), dropProjectId, "dropped", {
+    ...hqOptions(), reason: $("#hq-drop-reason").value,
+  }));
+  if (error) return;
+  dialogs.drop.close();
+  afterDrop?.();
+  if (screen === "board") $("#ph-stage").focus();
+});
+
+function renderWeekOptions(listEl, countEl) {
+  const state = currentState();
+  const active = new Set([...orbitProjects(state), ...projectsInStage("next")].map((project) => String(project.id)));
+  const options = plannerTasks.filter((task) => !task.tombstone &&
+    (task.thisWeek || (task.status !== "done" && active.has(String(task.projectId)))));
+  const picked = thisWeekTasks(state).length;
+  countEl.textContent = options.length
+    ? `${picked} of ${MAX_WEEK} picked`
+    : "No open tasks yet. Add some to a project in orbit or next.";
+  listEl.innerHTML = "";
+  for (const task of options) {
+    const item = hqEl("li", "hq-check");
+    const label = hqEl("label");
+    const box = hqEl("input");
+    box.type = "checkbox";
+    box.checked = task.thisWeek;
+    box.disabled = !task.thisWeek && picked >= MAX_WEEK;
+    box.dataset.pickTask = task.id;
+    label.append(box, hqEl("span", "hq-check-text", task.title), hqEl("span", "hq-check-project", projectName(task.projectId)));
+    item.appendChild(label);
+    listEl.appendChild(item);
+  }
+}
+
+// Picking re-renders the list, so focus has to be put back on the same box.
+function togglePick(event, listEl, countEl) {
+  const box = event.target.closest("[data-pick-task]");
+  if (!box) return;
+  applyHqRule(setThisWeek(currentState(), box.dataset.pickTask, box.checked, hqOptions()));
+  renderWeekOptions(listEl, countEl);
+  listEl.querySelector(`[data-pick-task="${CSS.escape(box.dataset.pickTask)}"]`)?.focus();
+}
+
+$("#hq-week-pick").addEventListener("click", () => {
+  renderWeekOptions($("#hq-week-options"), $("#hq-week-count"));
+  dialogs.week.showModal();
+});
+$("#hq-week-options").addEventListener("change", (event) =>
+  togglePick(event, $("#hq-week-options"), $("#hq-week-count")));
+
+// --- Orbit screen events ---
+$("#screen-orbit").addEventListener("click", (event) => {
+  const open = event.target.closest("[data-open]");
+  if (open) { openBoard(open.dataset.open); return; }
+  const log = event.target.closest("[data-log]");
+  if (log) { openLogDialog(log.dataset.log); return; }
+  const pill = event.target.closest("[data-category]");
+  if (pill) {
+    parkCategory = pill.dataset.category;
+    renderParkPills();
+    $(`#hq-park-category [data-category="${parkCategory}"]`).focus();
+  }
+});
+
+$("#hq-week-list").addEventListener("change", (event) => {
+  const box = event.target.closest("[data-week-task]");
+  if (!box) return;
+  // Infinity files the task at the end of its new column.
+  moveTask(box.dataset.weekTask, box.checked ? "done" : "todo", Infinity);
+  renderOrbit();
+  $(`#hq-week-list [data-week-task="${CSS.escape(box.dataset.weekTask)}"]`)?.focus();
+});
+
+$("#hq-park-name").addEventListener("input", (event) => {
+  $("#hq-park-save").disabled = !event.target.value.trim();
+  $("#hq-park-status").textContent = "";
+});
+$("#hq-park-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const name = $("#hq-park-name").value.trim();
+  const error = applyHqRule(parkIdea(currentState(), { name, category: parkCategory, ...hqOptions() }));
+  if (error) { $("#hq-park-status").textContent = "Give the idea a name first."; return; }
+  $("#hq-park-name").value = "";
+  $("#hq-park-save").disabled = true;
+  $("#hq-park-status").textContent = `Parked “${name}”.`;
+  $("#hq-park-name").focus();
+});
+
+$("#hq-parked-more").addEventListener("click", () => {
+  parkedExpanded = !parkedExpanded;
+  renderProjectColumns();
+});
+
+$("#hq-starter-add").addEventListener("click", () => {
+  applyHqRule(addStarterProjects(currentState(), hqOptions()));
 });
 
 // ---------- First run: a tiny linked starter web ----------

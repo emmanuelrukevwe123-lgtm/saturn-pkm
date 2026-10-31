@@ -324,6 +324,8 @@ summaries + "Ask Saturn" Q&A over the user's notes).
 ## Saturn HQ (spec: docs/SATURN_HQ_SPEC.md)
 Phase 1 (schema v3): `normalizeProject`/`normalizeTask` gained the HQ fields, and a new `hq` object (`lastReviewAt`, `lastParkedReviewAt`, `starterAddedAt`) is stored under `saturn-pkm-hq` per account and in backups, but is not cloud-synced. Rules are pure functions in `public/modules/hq.js`: success returns new state, refusal returns `{ error }`. They bump `updated`/`revision` because merge and sync pick winners by `updated`. `currentKeys()` in `script.js` is now the one list of storage keys.
 
+Phase 2 (v16): `#screen-orbit` and `#project-header` are static markup in `app.html`, filled in by the "Saturn HQ" block of `script.js` through `applyHqRule()`. HQ dialogs use native `<dialog>` (focus trap and Esc for free), not the older task-pop pattern. Category chips use the tag palette with a fainter dark-mode tint to pass contrast. Also added: `reviewStatus` for the card label, and `hq.spec.js` browser and axe tests.
+
 ## Phase status
 | Phase | What | Status |
 |---|---|---|
