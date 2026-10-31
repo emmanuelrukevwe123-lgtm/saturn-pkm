@@ -579,8 +579,11 @@ body.dark .ask-pop .ai-panel-body { color: #FFFFFF; }
 .hq-next-step { font-size: 14px; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
 .hq-slot {
   border: 1.5px dashed var(--line); background: none; color: var(--muted);
-  font-size: 14px; font-weight: 600; justify-content: center; text-align: center; min-height: 140px;
+  font-size: 14px; font-weight: 600; justify-content: center; text-align: center;
+  grid-column: 1 / -1; padding: 16px 22px;
 }
+.hq-slot:nth-child(even) { grid-column: auto; } /* beside a lone card, it fills the open half */
+#hq-slots { background: var(--surface); }
 
 .hq-check-list { list-style: none; border-top: 1px solid var(--line); }
 .hq-check { border-bottom: 1px solid var(--line); }
@@ -660,6 +663,7 @@ body.dark .ask-pop .ai-panel-body { color: #FFFFFF; }
 }
 .hq-dialog::backdrop { background: rgba(21, 42, 38, 0.42); }
 .hq-dialog .note-tools { margin-top: 20px; }
+.hq-dialog .hq-note { margin-bottom: 12px; }
 .hq-dialog .form-label.first { margin-top: 14px; }
 
 /* ============ Mobile / small screens ============ */
@@ -704,7 +708,6 @@ body.dark .ask-pop .ai-panel-body { color: #FFFFFF; }
   /* Saturn HQ: cards and columns stack; quick capture moves to the top */
   .hq-park { order: -1; }
   .hq-orbit-grid, .hq-columns { grid-template-columns: minmax(0, 1fr); }
-  .hq-slot { min-height: 88px; }
   .hq-header-top { flex-direction: column; align-items: center; }
   .hq-header-info { width: 100%; }
   .hq-link-form, .hq-track-form { grid-template-columns: minmax(0, 1fr); justify-items: start; }
