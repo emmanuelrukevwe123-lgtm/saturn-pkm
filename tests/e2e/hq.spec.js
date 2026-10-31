@@ -258,6 +258,7 @@ test("a full backup restores Orbit data through the real import screen", async (
 
 for (const theme of ["light", "dark"]) {
   test(`Orbit and the project header pass axe in ${theme} mode`, async ({ page }) => {
+    test.slow(); // eight full axe scans
     await page.evaluate((value) => localStorage.setItem("saturn-pkm-theme", value), theme);
     await seed(page, {
       projects: [
