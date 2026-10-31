@@ -315,3 +315,19 @@ test("dark mode is remembered", async ({ page }) => {
   await page.reload();
   await expect(page.locator("body")).toHaveClass(/dark/);
 });
+
+test("the sign-in button sits fully inside its card, even on a short screen", async ({ page }) => {
+  const width = page.viewportSize().width;
+  if (width <= 880) await page.locator("#menu-toggle").click();
+  for (const height of [800, 560]) {
+    await page.setViewportSize({ width, height });
+    const button = page.locator("#google-signin");
+    await button.scrollIntoViewIfNeeded();
+    const inner = await button.boundingBox();
+    const card = await page.locator("#auth-card").boundingBox();
+    expect(inner.y).toBeGreaterThanOrEqual(card.y);
+    expect(inner.y + inner.height).toBeLessThanOrEqual(card.y + card.height);
+    // Scrolled into view, it isn't cut off by the bottom of the screen either.
+    expect(inner.y + inner.height).toBeLessThanOrEqual(height);
+  }
+});
