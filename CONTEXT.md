@@ -321,6 +321,9 @@ summaries + "Ask Saturn" Q&A over the user's notes).
 - Planet favicon (theme-aware SVG)
 - First-run seed: 2 linked starter notes explaining the app
 
+## Saturn HQ (spec: docs/SATURN_HQ_SPEC.md)
+Phase 1 (schema v3): `normalizeProject`/`normalizeTask` gained the HQ fields, and a new `hq` object (`lastReviewAt`, `lastParkedReviewAt`, `starterAddedAt`) is stored under `saturn-pkm-hq` per account and in backups, but is not cloud-synced. Rules are pure functions in `public/modules/hq.js`: success returns new state, refusal returns `{ error }`. They bump `updated`/`revision` because merge and sync pick winners by `updated`. `currentKeys()` in `script.js` is now the one list of storage keys.
+
 ## Phase status
 | Phase | What | Status |
 |---|---|---|

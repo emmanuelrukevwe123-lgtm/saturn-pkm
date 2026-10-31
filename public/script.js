@@ -1,5 +1,5 @@
 import {
-  conflictCopy, newId, normalizeTitle, renameNoteState, rewriteWikiLinks, sameId, titleKey, uniqueTitle,
+  conflictCopy, newId, normalizeHq, normalizeTitle, renameNoteState, rewriteWikiLinks, sameId, titleKey, uniqueTitle,
 } from "./modules/domain.js";
 import {
   migrateLegacyStorage, readNotebook, writeNotebook,
@@ -61,6 +61,7 @@ const TRASH_KEY = "saturn-pkm-deleted-notes";
 const THEME_KEY = "saturn-pkm-theme";
 const PLANNER_PROJECTS_KEY = "saturn-pkm-planner-projects";
 const PLANNER_TASKS_KEY = "saturn-pkm-planner-tasks";
+const HQ_KEY = "saturn-pkm-hq";
 const FIREBASE_SDK_VERSION = "12.15.0";
 
 // ---------- State ----------
@@ -87,6 +88,8 @@ let projects = [];              // {id, name, created, updated}
 let plannerTasks = [];          // flat task list; each task carries projectId
 let plannerProjectsKey = PLANNER_PROJECTS_KEY;
 let plannerTasksKey = PLANNER_TASKS_KEY;
+let hqKey = HQ_KEY;
+let hq = normalizeHq();         // Saturn HQ review dates and starter marker
 let activeProjectId = null;     // which board is open
 let taskDetailId = null;        // which task is open in the detail panel
 let taskDraft = null;           // unsaved detail-panel edits
@@ -229,20 +232,25 @@ function saveDeleted() {
   persistAll();
 }
 
-function load() {
-  const migrated = migrateLegacyStorage(localStorage, {
+function currentKeys() {
+  return {
     notes: storageKey, deletedNotes: deletedStorageKey,
-    projects: plannerProjectsKey, tasks: plannerTasksKey,
-  });
+    projects: plannerProjectsKey, tasks: plannerTasksKey, hq: hqKey,
+  };
+}
+
+function load() {
+  const migrated = migrateLegacyStorage(localStorage, currentKeys());
   notes = migrated.state.notes;
   deletedNotes = migrated.state.deletedNotes;
   projects = migrated.state.projects;
   plannerTasks = migrated.state.tasks;
+  hq = migrated.state.hq;
   dark = localStorage.getItem(THEME_KEY) === "dark";
 }
 
 function currentState() {
-  return { notes, deletedNotes, projects, tasks: plannerTasks };
+  return { notes, deletedNotes, projects, tasks: plannerTasks, hq };
 }
 
 function applyState(state) {
@@ -250,14 +258,12 @@ function applyState(state) {
   deletedNotes = state.deletedNotes;
   projects = state.projects;
   plannerTasks = state.tasks;
+  hq = state.hq;
 }
 
 function persistAll({ announce = true } = {}) {
   try {
-    const normalized = writeNotebook(localStorage, {
-      notes: storageKey, deletedNotes: deletedStorageKey,
-      projects: plannerProjectsKey, tasks: plannerTasksKey,
-    }, currentState());
+    const normalized = writeNotebook(localStorage, currentKeys(), currentState());
     applyState(normalized);
     storageProblem = "";
     if (announce) coordinator?.announce(storageKey);
@@ -1078,12 +1084,9 @@ function renderDataScreen() {
 }
 
 function handleExternalNotebookChange(message) {
-  const relevant = new Set([storageKey, deletedStorageKey, plannerProjectsKey, plannerTasksKey]);
+  const relevant = new Set(Object.values(currentKeys()));
   if (message?.key && !relevant.has(message.key)) return;
-  const external = readNotebook(localStorage, {
-    notes: storageKey, deletedNotes: deletedStorageKey,
-    projects: plannerProjectsKey, tasks: plannerTasksKey,
-  });
+  const external = readNotebook(localStorage, currentKeys());
   if (draftIsDirty()) {
     const localBase = getNote(selectedId);
     const externalNote = external.notes.find((note) => sameId(note.id, selectedId));
@@ -1211,10 +1214,7 @@ importButton?.addEventListener("click", async () => {
   } catch (error) {
     applyState(stateSnapshot);
     try {
-      writeNotebook(localStorage, {
-        notes: storageKey, deletedNotes: deletedStorageKey,
-        projects: plannerProjectsKey, tasks: plannerTasksKey,
-      }, stateSnapshot);
+      writeNotebook(localStorage, currentKeys(), stateSnapshot);
       if (imageSnapshot) await replaceImages(imageSnapshot);
     } catch { /* keep original failure */ }
     storageProblem = `Import made no changes: ${error.message}`;
@@ -1318,7 +1318,9 @@ function copyLocalDeletedToUserStore(userKey) {
   if (localDeleted.length) localStorage.setItem(userKey, JSON.stringify(localDeleted));
 }
 
-function copyLocalPlannerToUserStore(projectsKey, tasksKey) {
+function copyLocalPlannerToUserStore(projectsKey, tasksKey, userHqKey) {
+  if (!localStorage.getItem(userHqKey) && localStorage.getItem(HQ_KEY))
+    localStorage.setItem(userHqKey, localStorage.getItem(HQ_KEY));
   if (!localStorage.getItem(projectsKey)) {
     const localProjects = parseStoredProjects(localStorage.getItem(PLANNER_PROJECTS_KEY));
     if (localProjects.length) localStorage.setItem(projectsKey, JSON.stringify(localProjects));
@@ -1335,10 +1337,11 @@ function switchNotebookForUser(user) {
   const nextDeletedKey = userDeletedStorageKey(user);
   const nextProjectsKey = scopedStorageKey(PLANNER_PROJECTS_KEY, user);
   const nextTasksKey = scopedStorageKey(PLANNER_TASKS_KEY, user);
+  const nextHqKey = scopedStorageKey(HQ_KEY, user);
   if (user) {
     copyLocalNotesToUserStore(nextKey);
     copyLocalDeletedToUserStore(nextDeletedKey);
-    copyLocalPlannerToUserStore(nextProjectsKey, nextTasksKey);
+    copyLocalPlannerToUserStore(nextProjectsKey, nextTasksKey, nextHqKey);
   }
 
   if (nextKey !== storageKey || nextDeletedKey !== deletedStorageKey) {
@@ -1346,6 +1349,7 @@ function switchNotebookForUser(user) {
     deletedStorageKey = nextDeletedKey;
     plannerProjectsKey = nextProjectsKey;
     plannerTasksKey = nextTasksKey;
+    hqKey = nextHqKey;
     selectedId = null;
     noteDraft = null;
     activeTag = null;

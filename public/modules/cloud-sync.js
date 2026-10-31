@@ -36,7 +36,7 @@ function changedFromBase(local, remote) {
 function conflictFor(record, records, type) {
   if (type === "note") return conflictCopy(record, records, record.deviceId || "device");
   const title = uniqueTitle(`${record.title || "Untitled task"} (conflict ${record.deviceId || "device"})`, records);
-  return { ...record, id: newId(), title, revision: 0, baseRevision: 0, deletedAt: null, tombstone: false };
+  return { ...record, id: newId(), title, thisWeek: false, revision: 0, baseRevision: 0, deletedAt: null, tombstone: false };
 }
 
 export function mergeSyncCollection(localRecords, remoteRecords, type) {

@@ -5,6 +5,7 @@ export const BASE_KEYS = Object.freeze({
   deletedNotes: "saturn-pkm-deleted-notes",
   projects: "saturn-pkm-planner-projects",
   tasks: "saturn-pkm-planner-tasks",
+  hq: "saturn-pkm-hq",
   theme: "saturn-pkm-theme",
 });
 
@@ -20,6 +21,7 @@ export function notebookKeys(uid = "") {
     deletedNotes: scopedKey(BASE_KEYS.deletedNotes, uid),
     projects: scopedKey(BASE_KEYS.projects, uid),
     tasks: scopedKey(BASE_KEYS.tasks, uid),
+    hq: scopedKey(BASE_KEYS.hq, uid),
   };
 }
 
@@ -32,12 +34,22 @@ function readArray(storage, key) {
   }
 }
 
+function readObject(storage, key) {
+  try {
+    const value = JSON.parse(storage.getItem(key) || "{}");
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  } catch {
+    return {};
+  }
+}
+
 export function readNotebook(storage, keys) {
   return normalizeState({
     notes: readArray(storage, keys.notes),
     deletedNotes: readArray(storage, keys.deletedNotes),
     projects: readArray(storage, keys.projects),
     tasks: readArray(storage, keys.tasks),
+    hq: readObject(storage, keys.hq),
   });
 }
 
@@ -68,6 +80,7 @@ export function writeNotebook(storage, keys, state) {
     [keys.deletedNotes, JSON.stringify(normalized.deletedNotes)],
     [keys.projects, JSON.stringify(normalized.projects)],
     [keys.tasks, JSON.stringify(normalized.tasks)],
+    [keys.hq, JSON.stringify(normalized.hq)],
     [META_KEY, JSON.stringify({ schemaVersion: SCHEMA_VERSION, migratedAt: new Date().toISOString() })],
   ]);
   return normalized;
