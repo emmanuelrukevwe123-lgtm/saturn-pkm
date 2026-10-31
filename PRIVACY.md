@@ -4,4 +4,4 @@ Saturn is local-first. Notes, deleted notes, projects, tasks, settings, and cach
 
 Google sign-in sends authentication data to Firebase. Cloud sync sends owner-scoped records to Firestore and referenced images to Firebase Storage only when the deployment feature flag is enabled. AI features send selected note text to the Saturn serverless endpoint and Gemini only after a verified, allowlisted user asks for a summary or answer. The endpoint does not log note contents.
 
-Clearing browser storage removes the local cache. Export a backup first. Contact the repository owner for account-data deletion requests.
+Signing out does not erase a notebook from that browser, so on a shared computer clear the site's data as well. Clearing browser storage removes the local cache. Export a backup first. Contact the repository owner for account-data deletion requests.

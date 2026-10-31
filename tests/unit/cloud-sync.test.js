@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { mergeSyncCollection, syncRecord, tombstoneExpired } from "../../public/modules/cloud-sync.js";
+import { mergeSyncCollection, syncRecord, tombstoneExpired } from "../../src/lib/cloud-sync.js";
 
 describe("cloud sync domain", () => {
+  it("doesn't let a task's conflict copy take a this-week slot", () => {
+    const base = { id: "t", projectId: "p", title: "Task", thisWeek: true, revision: 2, baseRevision: 1, deviceId: "a" };
+    const records = mergeSyncCollection(
+      [{ ...base, notes: "local", updated: "2026-01-01" }],
+      [{ ...base, notes: "remote", deviceId: "b", updated: "2026-01-02" }], "task");
+    expect(records.map((record) => record.thisWeek)).toEqual([true, false]);
+  });
+
   it("preserves divergent note edits as a conflict copy", () => {
     const base = { id: "n", title: "Note", body: "", revision: 2, baseRevision: 1, deviceId: "a" };
     const records = mergeSyncCollection(

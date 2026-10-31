@@ -1,4 +1,5 @@
 node_modules/
+dist/
 .vercel/
 .env*
 Screenshot*.png
@@ -7,3 +8,4 @@ firebase-debug.log
 test-results/
 playwright-report/
 coverage/
+!.env.example

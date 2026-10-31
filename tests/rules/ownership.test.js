@@ -13,6 +13,8 @@ describe("owner-only Firestore access", () => {
     const intruder = env.authenticatedContext("bob").firestore();
     await assertSucceeds(setDoc(doc(owner, "users/alice/notes/n1"), { title: "private" }));
     await expect(assertFails(getDoc(doc(intruder, "users/alice/notes/n1")))).resolves.toBeDefined();
+    await assertSucceeds(setDoc(doc(owner, "users/alice/tracks/t1"), { name: "AWS", progress: 40 }));
+    await expect(assertFails(getDoc(doc(intruder, "users/alice/tracks/t1")))).resolves.toBeDefined();
   });
 
   it("allows only the owner to access image paths", async () => {

@@ -1,5 +1,7 @@
 # Codex Context - Saturn PKM
 
+> **Saturn is now a React + Vite app (v17).** See "React migration" in `CONTEXT.md`. Where this file mentions `public/script.js`, `public/modules/` or "no build step", read `src/` and `npm run build` instead.
+
 ## v15 hardening map
 
 Browser integration is `public/script.js`; reusable contracts live in `public/modules/`. Persistence schema v2 is local-first and transactional, backups use the versioned `.saturn` envelope, and images remain in IndexedDB with optional owner-scoped Storage replication. Cloud records carry revisions, base revisions, device IDs, server timestamps, and tombstones behind `SATURN_FEATURES.cloudSync`. Run `npm run check` plus `npm run test:rules` before deployment.
