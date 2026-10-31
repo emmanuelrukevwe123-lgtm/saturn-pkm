@@ -682,6 +682,7 @@ body.dark .ask-pop .ai-panel-body { color: #FFFFFF; }
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.28);
     transform: translateX(-105%);
     transition: transform .25s ease;
+    will-change: transform; /* its own layer, so the slide stays smooth while a screen renders */
   }
   body.nav-open .sidebar { transform: none; }
 

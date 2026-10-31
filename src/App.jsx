@@ -1,4 +1,4 @@
-import { Component, useEffect, useRef, useState } from "react";
+import { Component, useEffect, useMemo, useRef, useState } from "react";
 import { APP_VERSION } from "./config.js";
 import { sameId } from "./lib/domain.js";
 import { streamAI } from "./lib/ai.js";
@@ -191,6 +191,10 @@ export function App() {
   }, [mobile, setOpen]);
 
   const activeNav = { note: "home", board: "planner" }[screen] || screen;
+  // The same element between renders, so opening the menu doesn't re-render the
+  // screen behind it. Screens still update themselves through useApp().
+  const screenKey = screen === "note" ? `note-${selectedId}` : screen;
+  const currentScreen = useMemo(() => <Screen key={screenKey} />, [Screen, screenKey]);
 
   return (
     <>
@@ -240,7 +244,7 @@ export function App() {
           <div className="content">
             <ErrorBoundary>
               {/* The key gives each open note a fresh editor and AI panel. */}
-              <Screen key={screen === "note" ? `note-${selectedId}` : screen} />
+              {currentScreen}
             </ErrorBoundary>
           </div>
         </main>
